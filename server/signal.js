@@ -1,8 +1,9 @@
 // Basic WebSocket signaling server with room support
 const WebSocket = require('ws')
 
-const port = process.env.SIGNAL_PORT || 3001
-const wss = new WebSocket.Server({ port })
+// Prefer platform-provided PORT (e.g., Railway), then SIGNAL_PORT, else default 3001
+const port = process.env.PORT || process.env.SIGNAL_PORT || 3001
+const wss = new WebSocket.Server({ host: '0.0.0.0', port })
 
 /**
  * rooms: Map<roomId, Map<clientId, WebSocket>>
@@ -76,6 +77,6 @@ wss.on('connection', (ws) => {
   })
 })
 
-console.log(`[signal] listening on ws://localhost:${port}`)
+console.log(`[signal] listening on ws://0.0.0.0:${port}`)
 
 
