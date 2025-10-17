@@ -172,8 +172,15 @@ export function useWebRTC(roomId: string, userId: string) {
 
   const joinRoom = useCallback(async () => {
     await initializeAudioAnalysis()
-    const signalUrl = process.env.NEXT_PUBLIC_SIGNAL_URL || `ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`
-    const ws = new WebSocket(signalUrl)
+    // Prefer explicit NEXT_PUBLIC_SIGNAL_URL (e.g., wss://your-app.fly.dev)
+    // Fallbacks: ws(s) based on current location for local dev
+    const explicitUrl = process.env.NEXT_PUBLIC_SIGNAL_URL
+    const url = explicitUrl
+      ? explicitUrl
+      : typeof window !== 'undefined'
+        ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`
+        : `ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`
+    const ws = new WebSocket(url)
     wsRef.current = ws
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "join", roomId, clientId: clientIdRef.current }))

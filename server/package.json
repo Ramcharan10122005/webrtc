@@ -1,0 +1,15 @@
+{
+  "name": "sports-platform-signal",
+  "private": true,
+  "version": "1.0.0",
+  "main": "signal.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node signal.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
+
+
