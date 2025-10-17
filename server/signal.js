@@ -1,10 +1,8 @@
 // Basic WebSocket signaling server with room support
 const WebSocket = require('ws')
 
-// Fly.io provides PORT. Fall back to SIGNAL_PORT or 3001 for local dev.
-const port = Number(process.env.PORT || process.env.SIGNAL_PORT || 3001)
-const host = process.env.LISTEN_ADDR || '0.0.0.0'
-const wss = new WebSocket.Server({ port, host })
+const port = process.env.SIGNAL_PORT || 3001
+const wss = new WebSocket.Server({ port })
 
 /**
  * rooms: Map<roomId, Map<clientId, WebSocket>>
@@ -78,6 +76,6 @@ wss.on('connection', (ws) => {
   })
 })
 
-console.log(`[signal] listening on ws://${host}:${port}`)
+console.log(`[signal] listening on ws://localhost:${port}`)
 
 
