@@ -183,8 +183,14 @@ export function useWebRTC(roomId: string, userId: string) {
         handleSignal(JSON.parse(ev.data))
       } catch {}
     }
+    ws.onerror = (e) => {
+      console.error("WebSocket error", e)
+      setError("Signaling connection failed")
+      setIsConnected(false)
+    }
     ws.onclose = () => {
       wsRef.current = null
+      setIsConnected(false)
     }
   }, [initializeAudioAnalysis, handleSignal, roomId])
 
