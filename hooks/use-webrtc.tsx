@@ -172,7 +172,11 @@ export function useWebRTC(roomId: string, userId: string) {
 
   const joinRoom = useCallback(async () => {
     await initializeAudioAnalysis()
-    const ws = new WebSocket(`ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`)
+    // Use deployed signaling server on production, local on development
+    const signalUrl = process.env.NODE_ENV === 'production' 
+      ? 'wss://webrtc1-btng.onrender.com'  // Your deployed Render signaling server
+      : `ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`
+    const ws = new WebSocket(signalUrl)
     wsRef.current = ws
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "join", roomId, clientId: clientIdRef.current }))

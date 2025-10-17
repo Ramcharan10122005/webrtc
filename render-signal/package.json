@@ -1,0 +1,15 @@
+{
+  "name": "signal-server",
+  "version": "1.0.0",
+  "description": "WebRTC signaling server for sports platform",
+  "main": "signal.js",
+  "scripts": {
+    "start": "node signal.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
