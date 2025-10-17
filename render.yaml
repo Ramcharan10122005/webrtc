@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: sports-platform-signaling
+    env: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SIGNAL_PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
