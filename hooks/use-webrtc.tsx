@@ -172,8 +172,7 @@ export function useWebRTC(roomId: string, userId: string) {
 
   const joinRoom = useCallback(async () => {
     await initializeAudioAnalysis()
-    const signalUrl = process.env.NEXT_PUBLIC_SIGNAL_URL || `ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`
-    const ws = new WebSocket(signalUrl)
+    const ws = new WebSocket(`ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`)
     wsRef.current = ws
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "join", roomId, clientId: clientIdRef.current }))
