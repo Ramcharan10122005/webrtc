@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Mic, MicOff, Hand, Users, Volume2, Settings, ArrowLeft, Crown, Square, Circle } from "lucide-react"
 import Link from "next/link"
-import { useWebRTC } from "@/hooks/use-webrtc"
+import { useLiveKit } from "@/hooks/use-livekit"
 import { useRealtimeScores } from "@/hooks/use-realtime-scores"
 import { RealtimeNotifications } from "@/components/realtime-notifications"
 import { useAuth } from "@/hooks/use-auth"
@@ -28,7 +28,7 @@ interface VoiceRoomInterfaceProps {
 
 export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
   const { user } = useAuth()
-  const { isConnected, isMuted, audioLevel, remoteStreams, toggleMute, joinRoom, leaveRoom } = useWebRTC(eventId, user?.id || "")
+  const { isConnected, isMuted, audioLevel, users: livekitUsers, remoteStreams, toggleMute, joinRoom, leaveRoom } = useLiveKit(eventId, user?.name || user?.id || "user")
   const { scores, isLive } = useRealtimeScores(eventId)
 
   const [currentUser] = useState<User>({
@@ -41,54 +41,27 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
     requestedToSpeak: false,
   })
 
-  const [currentSpeaker, setCurrentSpeaker] = useState<User>({
-    id: "speaker-1",
-    name: "Alex Johnson",
+  // Convert LiveKit users to our User interface
+  const listeners: User[] = livekitUsers.map(livekitUser => ({
+    id: livekitUser.id,
+    name: livekitUser.name,
     avatar: "",
-    isSpeaking: true,
-    isMuted: false,
-    isAdmin: true,
-    requestedToSpeak: false,
-  })
+    isSpeaking: livekitUser.isSpeaking,
+    isMuted: livekitUser.isMuted,
+    isAdmin: false, // You can implement admin logic later
+    requestedToSpeak: false, // You can implement hand raising later
+  }))
 
-  const [listeners, setListeners] = useState<User[]>([
-    {
-      id: "user-2",
-      name: "Sarah Chen",
-      avatar: "",
-      isSpeaking: false,
-      isMuted: false,
-      isAdmin: false,
-      requestedToSpeak: true,
-    },
-    {
-      id: "user-3",
-      name: "Mike Wilson",
-      avatar: "",
-      isSpeaking: false,
-      isMuted: false,
-      isAdmin: false,
-      requestedToSpeak: false,
-    },
-    {
-      id: "user-4",
-      name: "Emma Davis",
-      avatar: "",
-      isSpeaking: false,
-      isMuted: false,
-      isAdmin: false,
-      requestedToSpeak: true,
-    },
-    {
-      id: "user-5",
-      name: "James Brown",
-      avatar: "",
-      isSpeaking: false,
-      isMuted: false,
-      isAdmin: false,
-      requestedToSpeak: false,
-    },
-  ])
+  // Find the current speaker (first speaking user or first user if none speaking)
+  const currentSpeaker: User = listeners.find(user => user.isSpeaking) || listeners[0] || {
+    id: "no-speaker",
+    name: "No one speaking",
+    avatar: "",
+    isSpeaking: false,
+    isMuted: false,
+    isAdmin: false,
+    requestedToSpeak: false,
+  }
 
   const [hasRequestedToSpeak, setHasRequestedToSpeak] = useState(false)
   const [isRecording, setIsRecording] = useState(true)
@@ -119,7 +92,9 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
 
   useEffect(() => {
     joinRoom()
-    return () => leaveRoom()
+    return () => {
+      leaveRoom()
+    }
   }, [joinRoom, leaveRoom])
 
   const eventInfo = {
@@ -276,7 +251,7 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
               <h3 className="text-lg font-semibold">Listeners</h3>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Users className="w-4 h-4" />
-                <span>{listeners.length + 1} in room</span>
+                <span>{listeners.length} in room</span>
               </div>
             </div>
 
