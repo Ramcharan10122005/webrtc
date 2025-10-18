@@ -34,13 +34,16 @@ export function useWebRTC(roomId: string, userId: string) {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-        },
+          sampleRate: 48000,
+          channelCount: 1,
+          volume: 1.0,
+        } as MediaTrackConstraints,
       })
 
       localStreamRef.current = stream
 
-      // Create audio context for voice activity detection
-      audioContextRef.current = new AudioContext()
+      // Create audio context for voice activity detection (match WebRTC sample rate)
+      audioContextRef.current = new AudioContext({ sampleRate: 48000 })
       const source = audioContextRef.current.createMediaStreamSource(stream)
       analyserRef.current = audioContextRef.current.createAnalyser()
       analyserRef.current.fftSize = 256
@@ -70,7 +73,13 @@ export function useWebRTC(roomId: string, userId: string) {
   const ensurePeerConnection = useCallback((peerId: string) => {
     let pc = peerConnectionsRef.current.get(peerId)
     if (pc) return pc
-    pc = new RTCPeerConnection({ iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] })
+    pc = new RTCPeerConnection({ 
+      iceServers: [
+        { urls: ["stun:stun.l.google.com:19302"] },
+        { urls: ["stun:stun1.l.google.com:19302"] },
+        { urls: ["stun:stun2.l.google.com:19302"] }
+      ]
+    })
     // Attach local tracks
     const local = localStreamRef.current
     if (local) {
@@ -119,7 +128,9 @@ export function useWebRTC(roomId: string, userId: string) {
     if (msg.type === "peer-joined") {
       // New peer, we initiate offer
       const pc = ensurePeerConnection(from)
-      const offer = await pc.createOffer({ offerToReceiveAudio: true })
+      const offer = await pc.createOffer({ 
+        offerToReceiveAudio: true
+      })
       await pc.setLocalDescription(offer)
       wsRef.current?.send(JSON.stringify({ type: "offer", sdp: offer, to: from, roomId }))
       return

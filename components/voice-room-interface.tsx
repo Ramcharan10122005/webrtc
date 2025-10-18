@@ -175,6 +175,12 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
                 el.srcObject = stream
                 el.muted = false
                 el.volume = 1
+                el.preload = "none"
+                el.controls = false
+                // Optimize for voice quality
+                if (el.setSinkId) {
+                  el.setSinkId('default').catch(() => {})
+                }
               }
             }}
             autoPlay
