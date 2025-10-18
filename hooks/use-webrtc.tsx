@@ -34,16 +34,17 @@ export function useWebRTC(roomId: string, userId: string) {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: 48000,
+          sampleRate: 16000, // Lower sample rate for better mobile compatibility
           channelCount: 1,
           volume: 1.0,
+          latency: 0.01, // Low latency for real-time communication
         } as MediaTrackConstraints,
       })
 
       localStreamRef.current = stream
 
       // Create audio context for voice activity detection (match WebRTC sample rate)
-      audioContextRef.current = new AudioContext({ sampleRate: 48000 })
+      audioContextRef.current = new AudioContext({ sampleRate: 16000 })
       const source = audioContextRef.current.createMediaStreamSource(stream)
       analyserRef.current = audioContextRef.current.createAnalyser()
       analyserRef.current.fftSize = 256
@@ -77,8 +78,27 @@ export function useWebRTC(roomId: string, userId: string) {
       iceServers: [
         { urls: ["stun:stun.l.google.com:19302"] },
         { urls: ["stun:stun1.l.google.com:19302"] },
-        { urls: ["stun:stun2.l.google.com:19302"] }
-      ]
+        { urls: ["stun:stun2.l.google.com:19302"] },
+        // Add TURN servers for better NAT traversal
+        { 
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject", 
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        }
+      ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
     })
     // Attach local tracks
     const local = localStreamRef.current
@@ -93,9 +113,24 @@ export function useWebRTC(roomId: string, userId: string) {
     } catch {}
     pc.onicecandidate = (e) => {
       if (e.candidate && wsRef.current) {
+        console.log(`ICE candidate for ${peerId}:`, e.candidate.type, e.candidate.protocol)
         wsRef.current.send(
           JSON.stringify({ type: "ice-candidate", candidate: e.candidate, to: peerId, roomId })
         )
+      } else if (e.candidate === null) {
+        console.log(`ICE gathering complete for ${peerId}`)
+      }
+    }
+    
+    pc.onicegatheringstatechange = () => {
+      console.log(`ICE gathering state for ${peerId}:`, pc.iceGatheringState)
+    }
+    
+    pc.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state for ${peerId}:`, pc.iceConnectionState)
+      if (pc.iceConnectionState === 'failed') {
+        console.warn(`ICE connection failed for ${peerId}, attempting restart`)
+        pc.restartIce()
       }
     }
     pc.ontrack = (e) => {
@@ -155,7 +190,10 @@ export function useWebRTC(roomId: string, userId: string) {
       const pc = ensurePeerConnection(from)
       try {
         await pc.addIceCandidate(new RTCIceCandidate(msg.candidate))
-      } catch {}
+        console.log(`Added ICE candidate from ${from}:`, msg.candidate.type)
+      } catch (error) {
+        console.warn(`Failed to add ICE candidate from ${from}:`, error)
+      }
       return
     }
 
