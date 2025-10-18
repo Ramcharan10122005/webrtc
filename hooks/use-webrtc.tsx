@@ -104,13 +104,22 @@ export function useWebRTC(roomId: string, userId: string) {
     const local = localStreamRef.current
     if (local) {
       for (const track of local.getAudioTracks()) {
-        pc.addTrack(track, local)
+        // Clone the track to avoid issues with multiple connections
+        const clonedTrack = track.clone()
+        pc.addTrack(clonedTrack, local)
       }
     }
-    // Ensure we are prepared to receive remote audio
+    
+    // Ensure we are prepared to receive remote audio with proper configuration
     try {
-      pc.addTransceiver("audio", { direction: "recvonly" })
-    } catch {}
+      const transceiver = pc.addTransceiver("audio", { 
+        direction: "recvonly",
+        streams: []
+      })
+      console.log(`Added audio transceiver for ${peerId}`)
+    } catch (error) {
+      console.warn("Failed to add audio transceiver:", error)
+    }
     pc.onicecandidate = (e) => {
       if (e.candidate && wsRef.current) {
         console.log(`ICE candidate for ${peerId}:`, e.candidate.type, e.candidate.protocol)
@@ -135,6 +144,14 @@ export function useWebRTC(roomId: string, userId: string) {
     }
     pc.ontrack = (e) => {
       const [stream] = e.streams
+      console.log(`Received remote stream from ${peerId}:`, stream.getAudioTracks().length, 'audio tracks')
+      
+      // Ensure audio tracks are properly enabled
+      stream.getAudioTracks().forEach(track => {
+        track.enabled = true
+        console.log(`Audio track from ${peerId}:`, track.label, track.readyState)
+      })
+      
       setRemoteStreams((prev) => {
         const next = new Map(prev)
         next.set(peerId, stream)
@@ -142,7 +159,9 @@ export function useWebRTC(roomId: string, userId: string) {
       })
     }
     pc.onconnectionstatechange = () => {
+      console.log(`Connection state for ${peerId}:`, pc.connectionState)
       if (pc.connectionState === "failed" || pc.connectionState === "closed" || pc.connectionState === "disconnected") {
+        console.warn(`Connection lost with ${peerId}, cleaning up`)
         setRemoteStreams((prev) => {
           const next = new Map(prev)
           next.delete(peerId)
@@ -150,6 +169,28 @@ export function useWebRTC(roomId: string, userId: string) {
         })
         peerConnectionsRef.current.delete(peerId)
       }
+    }
+    
+    // Add data channel for connection health monitoring
+    try {
+      const dataChannel = pc.createDataChannel('health', { ordered: true })
+      dataChannel.onopen = () => {
+        console.log(`Data channel opened with ${peerId}`)
+        // Send periodic ping to keep connection alive
+        setInterval(() => {
+          if (dataChannel.readyState === 'open') {
+            dataChannel.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }))
+          }
+        }, 5000)
+      }
+      dataChannel.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        if (data.type === 'ping') {
+          console.log(`Received ping from ${peerId}`)
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to create data channel:", error)
     }
     peerConnectionsRef.current.set(peerId, pc)
     return pc
@@ -173,16 +214,32 @@ export function useWebRTC(roomId: string, userId: string) {
 
     if (msg.type === "offer" && msg.to === selfId) {
       const pc = ensurePeerConnection(from)
-      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
-      wsRef.current?.send(JSON.stringify({ type: "answer", sdp: answer, to: from, roomId }))
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        wsRef.current?.send(JSON.stringify({ type: "answer", sdp: answer, to: from, roomId }))
+        console.log(`Sent answer to ${from}`)
+      } catch (error) {
+        console.error(`Failed to handle offer from ${from}:`, error)
+        // Try to restart ICE if offer handling fails
+        try {
+          pc.restartIce()
+        } catch (restartError) {
+          console.error(`Failed to restart ICE for ${from}:`, restartError)
+        }
+      }
       return
     }
 
     if (msg.type === "answer" && msg.to === selfId) {
       const pc = ensurePeerConnection(from)
-      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+        console.log(`Set remote description from ${from}`)
+      } catch (error) {
+        console.error(`Failed to set remote description from ${from}:`, error)
+      }
       return
     }
 
@@ -221,30 +278,54 @@ export function useWebRTC(roomId: string, userId: string) {
 
   const joinRoom = useCallback(async () => {
     await initializeAudioAnalysis()
-    // Use deployed signaling server on production, local on development
-    const signalUrl = process.env.NODE_ENV === 'production' 
-      ? 'wss://webrtc1-btng.onrender.com'  // Your deployed Render signaling server
-      : `ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`
-    const ws = new WebSocket(signalUrl)
-    wsRef.current = ws
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "join", roomId, clientId: clientIdRef.current }))
-      setIsConnected(true)
+    
+    const connectWebSocket = (retryCount = 0) => {
+      // Use deployed signaling server on production, local on development
+      const signalUrl = process.env.NODE_ENV === 'production' 
+        ? 'wss://webrtc1-btng.onrender.com'  // Your deployed Render signaling server
+        : `ws://localhost:${process.env.NEXT_PUBLIC_SIGNAL_PORT || 3001}`
+      
+      console.log(`Connecting to signaling server: ${signalUrl}`)
+      const ws = new WebSocket(signalUrl)
+      wsRef.current = ws
+      
+      ws.onopen = () => {
+        console.log("WebSocket connected")
+        ws.send(JSON.stringify({ type: "join", roomId, clientId: clientIdRef.current }))
+        setIsConnected(true)
+        setError(null)
+      }
+      
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data)
+          console.log("Received signaling message:", data.type)
+          handleSignal(data)
+        } catch (error) {
+          console.error("Failed to parse signaling message:", error)
+        }
+      }
+      
+      ws.onerror = (e) => {
+        console.error("WebSocket error", e)
+        setError("Signaling connection failed")
+        setIsConnected(false)
+      }
+      
+      ws.onclose = (event) => {
+        console.log("WebSocket closed:", event.code, event.reason)
+        wsRef.current = null
+        setIsConnected(false)
+        
+        // Retry connection if it wasn't a clean close
+        if (event.code !== 1000 && retryCount < 3) {
+          console.log(`Retrying connection (attempt ${retryCount + 1}/3)`)
+          setTimeout(() => connectWebSocket(retryCount + 1), 2000 * (retryCount + 1))
+        }
+      }
     }
-    ws.onmessage = (ev) => {
-      try {
-        handleSignal(JSON.parse(ev.data))
-      } catch {}
-    }
-    ws.onerror = (e) => {
-      console.error("WebSocket error", e)
-      setError("Signaling connection failed")
-      setIsConnected(false)
-    }
-    ws.onclose = () => {
-      wsRef.current = null
-      setIsConnected(false)
-    }
+    
+    connectWebSocket()
   }, [initializeAudioAnalysis, handleSignal, roomId])
 
   const leaveRoom = useCallback(() => {
@@ -280,6 +361,30 @@ export function useWebRTC(roomId: string, userId: string) {
     }
   }, [leaveRoom])
 
+  // Debug function to check connection states
+  const debugConnections = useCallback(() => {
+    console.log("=== WebRTC Debug Info ===")
+    console.log("Local stream:", localStreamRef.current?.getAudioTracks().length || 0, "audio tracks")
+    console.log("Remote streams:", remoteStreams.size)
+    console.log("Peer connections:", peerConnectionsRef.current.size)
+    
+    peerConnectionsRef.current.forEach((pc, peerId) => {
+      console.log(`Peer ${peerId}:`)
+      console.log(`  - Connection state: ${pc.connectionState}`)
+      console.log(`  - ICE connection state: ${pc.iceConnectionState}`)
+      console.log(`  - ICE gathering state: ${pc.iceGatheringState}`)
+      console.log(`  - Signaling state: ${pc.signalingState}`)
+    })
+    
+    remoteStreams.forEach((stream, peerId) => {
+      console.log(`Remote stream from ${peerId}:`)
+      stream.getAudioTracks().forEach((track, index) => {
+        console.log(`  - Track ${index}: ${track.label}, enabled: ${track.enabled}, readyState: ${track.readyState}`)
+      })
+    })
+    console.log("=== End Debug Info ===")
+  }, [remoteStreams])
+
   return {
     isConnected,
     isMuted,
@@ -290,5 +395,6 @@ export function useWebRTC(roomId: string, userId: string) {
     joinRoom,
     leaveRoom,
     toggleMute,
+    debugConnections,
   }
 }
