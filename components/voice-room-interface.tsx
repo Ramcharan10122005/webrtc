@@ -28,7 +28,7 @@ interface VoiceRoomInterfaceProps {
 
 export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
   const { user } = useAuth()
-  const { isConnected, isMuted, audioLevel, remoteStreams, toggleMute, joinRoom, leaveRoom } = useWebRTC(eventId, user?.id || "")
+  const { isConnected, isMuted, audioLevel, remoteStreams, useTurnServers, setUseTurnServers, toggleMute, joinRoom, leaveRoom } = useWebRTC(eventId, user?.id || "")
   const { scores, isLive } = useRealtimeScores(eventId)
 
   const [currentUser] = useState<User>({
@@ -354,6 +354,19 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
               >
                 <Volume2 className="w-4 h-4 mr-1" />
                 Enable Audio
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className={`${
+                  useTurnServers
+                    ? "bg-accent/20 hover:bg-accent/30 text-accent border-accent/50"
+                    : "border-accent/20 hover:bg-accent/10"
+                } bg-transparent text-xs`}
+                onClick={() => setUseTurnServers(!useTurnServers)}
+              >
+                {useTurnServers ? "STUN+TURN" : "STUN Only"}
               </Button>
 
               <Button

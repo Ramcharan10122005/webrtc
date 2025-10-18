@@ -17,6 +17,7 @@ export function useWebRTC(roomId: string, userId: string) {
   const [users, setUsers] = useState<WebRTCUser[]>([])
   const [error, setError] = useState<string | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map())
+  const [useTurnServers, setUseTurnServers] = useState(false)
 
   const localStreamRef = useRef<MediaStream | null>(null)
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map())
@@ -100,10 +101,15 @@ export function useWebRTC(roomId: string, userId: string) {
       }
     ]
     
+    // Choose servers based on toggle
+    const selectedServers = useTurnServers ? [...stunOnlyServers, ...turnServers] : stunOnlyServers
+    
     pc = new RTCPeerConnection({ 
-      iceServers: stunOnlyServers,
+      iceServers: selectedServers,
       iceCandidatePoolSize: 10
     })
+    
+    console.log(`Creating peer connection for ${peerId} with ${useTurnServers ? 'STUN+TURN' : 'STUN-only'} servers`)
     // Attach local tracks
     const local = localStreamRef.current
     if (local) {
@@ -143,6 +149,8 @@ export function useWebRTC(roomId: string, userId: string) {
             iceServers: [...stunOnlyServers, ...turnServers],
             iceCandidatePoolSize: 10
           })
+          
+          console.log(`Retrying connection for ${peerId} with STUN+TURN servers`)
           
           // Re-attach local tracks
           const local = localStreamRef.current
@@ -327,6 +335,8 @@ export function useWebRTC(roomId: string, userId: string) {
     users,
     error,
     remoteStreams,
+    useTurnServers,
+    setUseTurnServers,
     joinRoom,
     leaveRoom,
     toggleMute,
