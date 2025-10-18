@@ -71,7 +71,7 @@ export function useWebRTC(roomId: string, userId: string) {
   }, [])
 
   // Create/Get a peer connection for a given peer id
-  const ensurePeerConnection = useCallback((peerId: string) => {
+  const ensurePeerConnection = useCallback((peerId: string, retryCount = 0) => {
     let pc = peerConnectionsRef.current.get(peerId)
     if (pc) return pc
     pc = new RTCPeerConnection({ 
@@ -79,7 +79,7 @@ export function useWebRTC(roomId: string, userId: string) {
         { urls: ["stun:stun.l.google.com:19302"] },
         { urls: ["stun:stun1.l.google.com:19302"] },
         { urls: ["stun:stun2.l.google.com:19302"] },
-        // Add TURN servers for better NAT traversal
+        // Multiple TURN servers for better reliability
         { 
           urls: "turn:openrelay.metered.ca:80",
           username: "openrelayproject",
@@ -94,11 +94,28 @@ export function useWebRTC(roomId: string, userId: string) {
           urls: "turn:openrelay.metered.ca:443?transport=tcp",
           username: "openrelayproject",
           credential: "openrelayproject"
+        },
+        // Additional TURN servers
+        {
+          urls: "turn:relay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        {
+          urls: "turn:relay.metered.ca:443",
+          username: "openrelayproject", 
+          credential: "openrelayproject"
+        },
+        {
+          urls: "turn:relay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject"
         }
       ],
       iceCandidatePoolSize: 10,
       bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require'
+      rtcpMuxPolicy: 'require',
+      iceTransportPolicy: retryCount > 0 ? 'relay' : 'all' // Force TURN on retry
     })
     // Attach local tracks
     const local = localStreamRef.current
@@ -122,7 +139,11 @@ export function useWebRTC(roomId: string, userId: string) {
     }
     pc.onicecandidate = (e) => {
       if (e.candidate && wsRef.current) {
-        console.log(`ICE candidate for ${peerId}:`, e.candidate.type, e.candidate.protocol)
+        console.log(`ICE candidate for ${peerId}:`, e.candidate.type, e.candidate.protocol, e.candidate.address)
+        // Log TURN server usage
+        if (e.candidate.type === 'relay') {
+          console.log(`🎯 TURN relay candidate found for ${peerId}!`, e.candidate)
+        }
         wsRef.current.send(
           JSON.stringify({ type: "ice-candidate", candidate: e.candidate, to: peerId, roomId })
         )
@@ -133,13 +154,44 @@ export function useWebRTC(roomId: string, userId: string) {
     
     pc.onicegatheringstatechange = () => {
       console.log(`ICE gathering state for ${peerId}:`, pc.iceGatheringState)
+      
+      // Set a timeout for ICE gathering
+      if (pc.iceGatheringState === 'gathering') {
+        setTimeout(() => {
+          if (pc.iceGatheringState === 'gathering') {
+            console.warn(`ICE gathering timeout for ${peerId}, forcing completion`)
+            // Force ICE gathering to complete
+            try {
+              pc.restartIce()
+            } catch (error) {
+              console.error(`Failed to restart ICE after timeout for ${peerId}:`, error)
+            }
+          }
+        }, 10000) // 10 second timeout
+      }
     }
     
     pc.oniceconnectionstatechange = () => {
       console.log(`ICE connection state for ${peerId}:`, pc.iceConnectionState)
       if (pc.iceConnectionState === 'failed') {
         console.warn(`ICE connection failed for ${peerId}, attempting restart`)
-        pc.restartIce()
+        try {
+          pc.restartIce()
+        } catch (error) {
+          console.error(`Failed to restart ICE for ${peerId}:`, error)
+          // If restart fails, try to recreate the connection with TURN-only policy
+          setTimeout(() => {
+            console.log(`Attempting to recreate connection for ${peerId} with TURN-only policy`)
+            peerConnectionsRef.current.delete(peerId)
+            setRemoteStreams((prev) => {
+              const next = new Map(prev)
+              next.delete(peerId)
+              return next
+            })
+            // Recreate with TURN-only policy
+            ensurePeerConnection(peerId, 1)
+          }, 1000)
+        }
       }
     }
     pc.ontrack = (e) => {
