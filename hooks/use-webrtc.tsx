@@ -79,7 +79,7 @@ export function useWebRTC(roomId: string, userId: string) {
         { urls: ["stun:stun.l.google.com:19302"] },
         { urls: ["stun:stun1.l.google.com:19302"] },
         { urls: ["stun:stun2.l.google.com:19302"] },
-        // Multiple TURN servers for better reliability
+        // Try multiple TURN server providers
         { 
           urls: "turn:openrelay.metered.ca:80",
           username: "openrelayproject",
@@ -95,7 +95,7 @@ export function useWebRTC(roomId: string, userId: string) {
           username: "openrelayproject",
           credential: "openrelayproject"
         },
-        // Additional TURN servers
+        // Alternative TURN servers
         {
           urls: "turn:relay.metered.ca:80",
           username: "openrelayproject",
@@ -110,6 +110,28 @@ export function useWebRTC(roomId: string, userId: string) {
           urls: "turn:relay.metered.ca:443?transport=tcp",
           username: "openrelayproject",
           credential: "openrelayproject"
+        },
+        // Additional free TURN servers
+        {
+          urls: "turn:freeturn.tel:3478",
+          username: "free",
+          credential: "free"
+        },
+        {
+          urls: "turn:freeturn.tel:3478?transport=tcp",
+          username: "free",
+          credential: "free"
+        },
+        // Additional free TURN servers
+        {
+          urls: "turn:turn.bistri.com:80",
+          username: "homeo",
+          credential: "homeo"
+        },
+        {
+          urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+          username: "webrtc",
+          credential: "webrtc"
         }
       ],
       iceCandidatePoolSize: 10,
@@ -149,6 +171,24 @@ export function useWebRTC(roomId: string, userId: string) {
         )
       } else if (e.candidate === null) {
         console.log(`ICE gathering complete for ${peerId}`)
+        // Check if we got any relay candidates
+        const hasRelayCandidates = Array.from(peerConnectionsRef.current.values()).some(pc => 
+          pc.getStats().then(stats => {
+            let hasRelay = false
+            stats.forEach(report => {
+              if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                if (report.remoteCandidateType === 'relay' || report.localCandidateType === 'relay') {
+                  hasRelay = true
+                }
+              }
+            })
+            return hasRelay
+          })
+        )
+        
+        if (!hasRelayCandidates) {
+          console.warn(`⚠️ No TURN relay candidates found for ${peerId}. Connection may fail between different networks.`)
+        }
       }
     }
     
@@ -437,6 +477,45 @@ export function useWebRTC(roomId: string, userId: string) {
     console.log("=== End Debug Info ===")
   }, [remoteStreams])
 
+  // Test TURN server connectivity
+  const testTURNServers = useCallback(async () => {
+    console.log("🧪 Testing TURN server connectivity...")
+    
+    const testPC = new RTCPeerConnection({
+      iceServers: [
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:freeturn.tel:3478", username: "free", credential: "free" }
+      ]
+    })
+    
+    let relayCandidatesFound = 0
+    
+    testPC.onicecandidate = (event) => {
+      if (event.candidate) {
+        console.log(`Test ICE candidate: ${event.candidate.type} ${event.candidate.protocol}`)
+        if (event.candidate.type === 'relay') {
+          relayCandidatesFound++
+          console.log(`✅ TURN server working: ${event.candidate.address}`)
+        }
+      } else {
+        console.log(`TURN test complete. Found ${relayCandidatesFound} relay candidates.`)
+        if (relayCandidatesFound === 0) {
+          console.warn("❌ No working TURN servers found!")
+        }
+        testPC.close()
+      }
+    }
+    
+    // Create a dummy offer to trigger ICE gathering
+    try {
+      await testPC.createOffer()
+      await testPC.setLocalDescription(await testPC.createOffer())
+    } catch (error) {
+      console.error("TURN test failed:", error)
+      testPC.close()
+    }
+  }, [])
+
   return {
     isConnected,
     isMuted,
@@ -448,5 +527,6 @@ export function useWebRTC(roomId: string, userId: string) {
     leaveRoom,
     toggleMute,
     debugConnections,
+    testTURNServers,
   }
 }
