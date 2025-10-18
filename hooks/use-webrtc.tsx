@@ -75,9 +75,26 @@ export function useWebRTC(roomId: string, userId: string) {
     if (pc) return pc
     pc = new RTCPeerConnection({ 
       iceServers: [
+        // Google STUN servers
         { urls: ["stun:stun.l.google.com:19302"] },
         { urls: ["stun:stun1.l.google.com:19302"] },
-        { urls: ["stun:stun2.l.google.com:19302"] }
+        { urls: ["stun:stun2.l.google.com:19302"] },
+        // Free TURN servers (for NAT traversal)
+        { 
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject", 
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        }
       ]
     })
     // Attach local tracks
