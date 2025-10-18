@@ -90,6 +90,13 @@ export function useLiveKit(roomName: string, participantName: string) {
         console.log("Connected to LiveKit room")
         setIsConnected(true)
         setError(null)
+        
+        // Initialize mute state
+        const audioTrackPublications = room.localParticipant.audioTrackPublications
+        if (audioTrackPublications.size > 0) {
+          const audioTrack = Array.from(audioTrackPublications.values())[0]
+          setIsMuted(audioTrack.isMuted)
+        }
       })
 
       room.on(RoomEvent.Disconnected, () => {
@@ -112,7 +119,7 @@ export function useLiveKit(roomName: string, participantName: string) {
         updateUsers()
       })
 
-      room.on(RoomEvent.TrackSubscribed, (track: Track, participant: RemoteParticipant) => {
+      room.on(RoomEvent.TrackSubscribed, (track: Track, publication: any, participant: RemoteParticipant) => {
         console.log(`Track subscribed: ${track.kind} from ${participant.identity}`)
         
         if (track.kind === Track.Kind.Audio) {
@@ -127,7 +134,7 @@ export function useLiveKit(roomName: string, participantName: string) {
         }
       })
 
-      room.on(RoomEvent.TrackUnsubscribed, (track: Track, participant: RemoteParticipant) => {
+      room.on(RoomEvent.TrackUnsubscribed, (track: Track, publication: any, participant: RemoteParticipant) => {
         console.log(`Track unsubscribed: ${track.kind} from ${participant.identity}`)
         
         if (track.kind === Track.Kind.Audio) {
@@ -139,9 +146,19 @@ export function useLiveKit(roomName: string, participantName: string) {
         }
       })
 
-      room.on(RoomEvent.SpeakingChanged, (participant: RemoteParticipant, speaking: boolean) => {
-        console.log(`${participant.identity} speaking: ${speaking}`)
-        updateUsers()
+      // Listen for local participant mute state changes
+      room.on(RoomEvent.TrackMuted, (publication: any, participant: any) => {
+        if (publication.kind === Track.Kind.Audio && participant === room.localParticipant) {
+          setIsMuted(true)
+          console.log('Local microphone muted')
+        }
+      })
+
+      room.on(RoomEvent.TrackUnmuted, (publication: any, participant: any) => {
+        if (publication.kind === Track.Kind.Audio && participant === room.localParticipant) {
+          setIsMuted(false)
+          console.log('Local microphone unmuted')
+        }
       })
 
       // Connect to LiveKit room
@@ -150,7 +167,8 @@ export function useLiveKit(roomName: string, participantName: string) {
 
       // Enable microphone
       if (localStreamRef.current) {
-        await room.localParticipant.enableCameraAndMicrophone()
+        await room.localParticipant.setMicrophoneEnabled(true)
+        console.log("Microphone enabled")
       }
 
     } catch (err) {
@@ -190,12 +208,16 @@ export function useLiveKit(roomName: string, participantName: string) {
     const usersList: LiveKitUser[] = []
 
     participants.forEach((participant) => {
+      // Check if participant has audio tracks and their mute status
+      const audioTracks = participant.audioTrackPublications
+      const isMuted = audioTracks.size > 0 ? Array.from(audioTracks.values())[0].isMuted : true
+      
       usersList.push({
         id: participant.identity,
         name: participant.name || participant.identity,
         isSpeaking: participant.isSpeaking,
         audioLevel: participant.audioLevel || 0,
-        isMuted: participant.isMuted,
+        isMuted: isMuted,
       })
     })
 
@@ -205,10 +227,22 @@ export function useLiveKit(roomName: string, participantName: string) {
   // Toggle mute
   const toggleMute = useCallback(async () => {
     if (roomRef.current?.localParticipant) {
-      const audioTrack = roomRef.current.localParticipant.getTrackByName('microphone')
-      if (audioTrack) {
-        await audioTrack.setEnabled(!audioTrack.isEnabled)
-        setIsMuted(!audioTrack.isEnabled)
+      try {
+        // Toggle microphone mute state
+        const audioTrackPublications = roomRef.current.localParticipant.audioTrackPublications
+        if (audioTrackPublications.size > 0) {
+          const audioTrack = Array.from(audioTrackPublications.values())[0]
+          const newMutedState = !audioTrack.isMuted
+          
+          // Use the local participant's setMicrophoneEnabled method
+          await roomRef.current.localParticipant.setMicrophoneEnabled(!newMutedState)
+          setIsMuted(newMutedState)
+          console.log(`Microphone ${newMutedState ? 'muted' : 'unmuted'}`)
+        } else {
+          console.warn('No audio track found to mute/unmute')
+        }
+      } catch (error) {
+        console.error('Error toggling mute:', error)
       }
     }
   }, [])
