@@ -108,37 +108,53 @@ export function useWebRTC(roomId: string, userId: string) {
           }
         ]
       } else if (retryCount === 1) {
-        // Second attempt: Use a more reliable TURN server
-        // Try a different set of free TURN servers
-        return [
-          ...baseServers,
-          {
-            urls: "turn:relay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          },
-          {
-            urls: "turn:relay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          },
-          {
-            urls: "turn:relay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          }
-        ]
+        // Second attempt: Use Twilio TURN servers (recommended for production)
+        // Get credentials from: https://console.twilio.com/us1/account/keys-credentials/tokens
+        const twilioUsername = process.env.NEXT_PUBLIC_TWILIO_ACCOUNT_SID
+        const twilioCredential = process.env.NEXT_PUBLIC_TWILIO_AUTH_TOKEN
         
-        // For production, replace with Twilio TURN (recommended):
-        // Get credentials from: https://www.twilio.com/stun-turn
-        // return [
-        //   ...baseServers,
-        //   {
-        //     urls: "turn:global.turn.twilio.com:3478?transport=udp",
-        //     username: "YOUR_TWILIO_USERNAME",
-        //     credential: "YOUR_TWILIO_CREDENTIAL"
-        //   }
-        // ]
+        if (twilioUsername && twilioCredential) {
+          console.log("Using Twilio TURN servers")
+          return [
+            ...baseServers,
+            {
+              urls: "turn:global.turn.twilio.com:3478?transport=udp",
+              username: twilioUsername,
+              credential: twilioCredential
+            },
+            {
+              urls: "turn:global.turn.twilio.com:3478?transport=tcp",
+              username: twilioUsername,
+              credential: twilioCredential
+            },
+            {
+              urls: "turns:global.turn.twilio.com:443?transport=tcp",
+              username: twilioUsername,
+              credential: twilioCredential
+            }
+          ]
+        } else {
+          console.warn("Twilio credentials not found, using free TURN servers")
+          // Fallback to free TURN servers
+          return [
+            ...baseServers,
+            {
+              urls: "turn:relay.metered.ca:80",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            },
+            {
+              urls: "turn:relay.metered.ca:443",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            },
+            {
+              urls: "turn:relay.metered.ca:443?transport=tcp",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            }
+          ]
+        }
       } else {
         // Final attempt: STUN only (will likely fail but worth trying)
         return baseServers
@@ -201,6 +217,7 @@ export function useWebRTC(roomId: string, userId: string) {
         
         if (!hasRelayCandidates) {
           console.warn(`⚠️ No TURN relay candidates found for ${peerId}. Connection may fail between different networks.`)
+          console.log(`💡 This is expected with free TURN servers. For production, use Twilio TURN or your own TURN server.`)
         }
       }
     }
@@ -309,17 +326,35 @@ export function useWebRTC(roomId: string, userId: string) {
     if (msg.type === "peer-joined") {
       // New peer, we initiate offer
       const pc = ensurePeerConnection(from)
-      const offer = await pc.createOffer({ 
-        offerToReceiveAudio: true
-      })
-      await pc.setLocalDescription(offer)
-      wsRef.current?.send(JSON.stringify({ type: "offer", sdp: offer, to: from, roomId }))
+      
+      // Check if we already have a local description
+      if (pc.localDescription) {
+        console.log(`Already have local description for ${from}, ignoring peer-joined`)
+        return
+      }
+      
+      try {
+        const offer = await pc.createOffer({ 
+          offerToReceiveAudio: true
+        })
+        await pc.setLocalDescription(offer)
+        wsRef.current?.send(JSON.stringify({ type: "offer", sdp: offer, to: from, roomId }))
+        console.log(`Sent offer to ${from}`)
+      } catch (error) {
+        console.error(`Failed to create offer for ${from}:`, error)
+      }
       return
     }
 
     if (msg.type === "offer" && msg.to === selfId) {
       const pc = ensurePeerConnection(from)
       try {
+        // Check if we already have a remote description
+        if (pc.remoteDescription) {
+          console.log(`Already have remote description for ${from}, ignoring duplicate offer`)
+          return
+        }
+        
         await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
         const answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
@@ -327,11 +362,34 @@ export function useWebRTC(roomId: string, userId: string) {
         console.log(`Sent answer to ${from}`)
       } catch (error) {
         console.error(`Failed to handle offer from ${from}:`, error)
-        // Try to restart ICE if offer handling fails
-        try {
-          pc.restartIce()
-        } catch (restartError) {
-          console.error(`Failed to restart ICE for ${from}:`, restartError)
+        
+        // If it's an SSL role error, try to recreate the connection
+        if (error instanceof Error && error.name === 'InvalidAccessError' && error.message.includes('SSL role')) {
+          console.log(`SSL role error for ${from}, recreating connection`)
+          peerConnectionsRef.current.delete(from)
+          setRemoteStreams((prev) => {
+            const next = new Map(prev)
+            next.delete(from)
+            return next
+          })
+          // Recreate the connection
+          const newPc = ensurePeerConnection(from, 1)
+          try {
+            await newPc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+            const answer = await newPc.createAnswer()
+            await newPc.setLocalDescription(answer)
+            wsRef.current?.send(JSON.stringify({ type: "answer", sdp: answer, to: from, roomId }))
+            console.log(`Sent answer to ${from} with recreated connection`)
+          } catch (retryError) {
+            console.error(`Failed to handle offer with recreated connection for ${from}:`, retryError)
+          }
+        } else {
+          // Try to restart ICE for other errors
+          try {
+            pc.restartIce()
+          } catch (restartError) {
+            console.error(`Failed to restart ICE for ${from}:`, restartError)
+          }
         }
       }
       return
@@ -340,10 +398,35 @@ export function useWebRTC(roomId: string, userId: string) {
     if (msg.type === "answer" && msg.to === selfId) {
       const pc = ensurePeerConnection(from)
       try {
+        // Check if we already have a remote description
+        if (pc.remoteDescription) {
+          console.log(`Already have remote description for ${from}, ignoring duplicate answer`)
+          return
+        }
+        
         await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
         console.log(`Set remote description from ${from}`)
       } catch (error) {
         console.error(`Failed to set remote description from ${from}:`, error)
+        
+        // If it's an SSL role error, try to recreate the connection
+        if (error instanceof Error && error.name === 'InvalidAccessError' && error.message.includes('SSL role')) {
+          console.log(`SSL role error for ${from}, recreating connection`)
+          peerConnectionsRef.current.delete(from)
+          setRemoteStreams((prev) => {
+            const next = new Map(prev)
+            next.delete(from)
+            return next
+          })
+          // Recreate the connection
+          const newPc = ensurePeerConnection(from, 1)
+          try {
+            await newPc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+            console.log(`Set remote description from ${from} with recreated connection`)
+          } catch (retryError) {
+            console.error(`Failed to set remote description with recreated connection for ${from}:`, retryError)
+          }
+        }
       }
       return
     }
@@ -537,17 +620,29 @@ export function useWebRTC(roomId: string, userId: string) {
   // Function to help set up Twilio TURN server
   const setupTwilioTURN = useCallback(() => {
     console.log("🔧 To set up Twilio TURN server:")
-    console.log("1. Go to: https://www.twilio.com/stun-turn")
-    console.log("2. Sign up for a free account")
-    console.log("3. Get your username and credential")
-    console.log("4. Replace the TURN server configuration in the code with:")
+    console.log("1. Go to: https://console.twilio.com/us1/account/keys-credentials/tokens")
+    console.log("2. Copy your Account SID and Auth Token")
+    console.log("3. Add them to your .env.local file:")
     console.log(`
-    {
-      urls: "turn:global.turn.twilio.com:3478?transport=udp",
-      username: "YOUR_TWILIO_USERNAME",
-      credential: "YOUR_TWILIO_CREDENTIAL"
-    }
+    NEXT_PUBLIC_TWILIO_ACCOUNT_SID=your_account_sid_here
+    NEXT_PUBLIC_TWILIO_AUTH_TOKEN=your_auth_token_here
     `)
+    console.log("4. Restart your development server")
+    console.log("5. The code will automatically use Twilio TURN servers!")
+    console.log("")
+    console.log("💡 Note: Twilio TURN servers are free for development and have generous limits.")
+  }, [])
+
+  // Quick setup function for Twilio TURN
+  const quickSetupTwilioTURN = useCallback((accountSid: string, authToken: string) => {
+    console.log("🚀 Quick setup for Twilio TURN:")
+    console.log("Add these to your .env.local file:")
+    console.log(`
+    NEXT_PUBLIC_TWILIO_ACCOUNT_SID=${accountSid}
+    NEXT_PUBLIC_TWILIO_AUTH_TOKEN=${authToken}
+    `)
+    console.log("Then restart your development server!")
+    console.log("The code will automatically detect and use Twilio TURN servers.")
   }, [])
 
   return {
@@ -563,5 +658,6 @@ export function useWebRTC(roomId: string, userId: string) {
     debugConnections,
     testTURNServers,
     setupTwilioTURN,
+    quickSetupTwilioTURN,
   }
 }
