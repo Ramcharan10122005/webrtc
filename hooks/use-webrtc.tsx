@@ -73,29 +73,36 @@ export function useWebRTC(roomId: string, userId: string) {
   const ensurePeerConnection = useCallback((peerId: string) => {
     let pc = peerConnectionsRef.current.get(peerId)
     if (pc) return pc
+    
+    // Start with STUN-only servers for better performance
+    const stunOnlyServers = [
+      { urls: ["stun:stun.l.google.com:19302"] },
+      { urls: ["stun:stun1.l.google.com:19302"] },
+      { urls: ["stun:stun2.l.google.com:19302"] }
+    ]
+    
+    // TURN servers as fallback
+    const turnServers = [
+      { 
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      },
+      { 
+        urls: "turn:openrelay.metered.ca:443",
+        username: "openrelayproject", 
+        credential: "openrelayproject"
+      },
+      { 
+        urls: "turn:openrelay.metered.ca:443?transport=tcp",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      }
+    ]
+    
     pc = new RTCPeerConnection({ 
-      iceServers: [
-        // Google STUN servers
-        { urls: ["stun:stun.l.google.com:19302"] },
-        { urls: ["stun:stun1.l.google.com:19302"] },
-        { urls: ["stun:stun2.l.google.com:19302"] },
-        // Free TURN servers (for NAT traversal)
-        { 
-          urls: "turn:openrelay.metered.ca:80",
-          username: "openrelayproject",
-          credential: "openrelayproject"
-        },
-        { 
-          urls: "turn:openrelay.metered.ca:443",
-          username: "openrelayproject", 
-          credential: "openrelayproject"
-        },
-        { 
-          urls: "turn:openrelay.metered.ca:443?transport=tcp",
-          username: "openrelayproject",
-          credential: "openrelayproject"
-        }
-      ]
+      iceServers: stunOnlyServers,
+      iceCandidatePoolSize: 10
     })
     // Attach local tracks
     const local = localStreamRef.current
@@ -124,7 +131,61 @@ export function useWebRTC(roomId: string, userId: string) {
       })
     }
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed" || pc.connectionState === "disconnected") {
+      if (pc.connectionState === "failed") {
+        // If STUN-only connection fails, try with TURN servers
+        console.log(`Connection failed for ${peerId}, retrying with TURN servers...`)
+        pc.close()
+        peerConnectionsRef.current.delete(peerId)
+        
+        // Retry with TURN servers after a short delay
+        setTimeout(() => {
+          const retryPc = new RTCPeerConnection({ 
+            iceServers: [...stunOnlyServers, ...turnServers],
+            iceCandidatePoolSize: 10
+          })
+          
+          // Re-attach local tracks
+          const local = localStreamRef.current
+          if (local) {
+            for (const track of local.getAudioTracks()) {
+              retryPc.addTrack(track, local)
+            }
+          }
+          
+          // Re-setup event handlers
+          retryPc.onicecandidate = (e) => {
+            if (e.candidate && wsRef.current) {
+              wsRef.current.send(
+                JSON.stringify({ type: "ice-candidate", candidate: e.candidate, to: peerId, roomId })
+              )
+            }
+          }
+          retryPc.ontrack = (e) => {
+            const [stream] = e.streams
+            setRemoteStreams((prev) => {
+              const next = new Map(prev)
+              next.set(peerId, stream)
+              return next
+            })
+          }
+          retryPc.onconnectionstatechange = () => {
+            if (retryPc.connectionState === "failed" || retryPc.connectionState === "closed" || retryPc.connectionState === "disconnected") {
+              setRemoteStreams((prev) => {
+                const next = new Map(prev)
+                next.delete(peerId)
+                return next
+              })
+              peerConnectionsRef.current.delete(peerId)
+            }
+          }
+          
+          peerConnectionsRef.current.set(peerId, retryPc)
+        }, 1000)
+        
+        return
+      }
+      
+      if (pc.connectionState === "closed" || pc.connectionState === "disconnected") {
         setRemoteStreams((prev) => {
           const next = new Map(prev)
           next.delete(peerId)
