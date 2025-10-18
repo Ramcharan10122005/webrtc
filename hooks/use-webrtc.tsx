@@ -74,70 +74,83 @@ export function useWebRTC(roomId: string, userId: string) {
   const ensurePeerConnection = useCallback((peerId: string, retryCount = 0) => {
     let pc = peerConnectionsRef.current.get(peerId)
     if (pc) return pc
-    pc = new RTCPeerConnection({ 
-      iceServers: [
+    // Use different ICE server configurations based on retry count
+    const getIceServers = (retryCount: number) => {
+      const baseServers = [
         { urls: ["stun:stun.l.google.com:19302"] },
         { urls: ["stun:stun1.l.google.com:19302"] },
-        { urls: ["stun:stun2.l.google.com:19302"] },
-        // Try multiple TURN server providers
-        { 
-          urls: "turn:openrelay.metered.ca:80",
-          username: "openrelayproject",
-          credential: "openrelayproject"
-        },
-        { 
-          urls: "turn:openrelay.metered.ca:443",
-          username: "openrelayproject", 
-          credential: "openrelayproject"
-        },
-        { 
-          urls: "turn:openrelay.metered.ca:443?transport=tcp",
-          username: "openrelayproject",
-          credential: "openrelayproject"
-        },
-        // Alternative TURN servers
-        {
-          urls: "turn:relay.metered.ca:80",
-          username: "openrelayproject",
-          credential: "openrelayproject"
-        },
-        {
-          urls: "turn:relay.metered.ca:443",
-          username: "openrelayproject", 
-          credential: "openrelayproject"
-        },
-        {
-          urls: "turn:relay.metered.ca:443?transport=tcp",
-          username: "openrelayproject",
-          credential: "openrelayproject"
-        },
-        // Additional free TURN servers
-        {
-          urls: "turn:freeturn.tel:3478",
-          username: "free",
-          credential: "free"
-        },
-        {
-          urls: "turn:freeturn.tel:3478?transport=tcp",
-          username: "free",
-          credential: "free"
-        },
-        // Additional free TURN servers
-        {
-          urls: "turn:turn.bistri.com:80",
-          username: "homeo",
-          credential: "homeo"
-        },
-        {
-          urls: "turn:turn.anyfirewall.com:443?transport=tcp",
-          username: "webrtc",
-          credential: "webrtc"
-        }
-      ],
+        { urls: ["stun:stun2.l.google.com:19302"] }
+      ]
+
+      if (retryCount === 0) {
+        // First attempt: Try all free TURN servers
+        return [
+          ...baseServers,
+          { 
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          { 
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject", 
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:freeturn.tel:3478",
+            username: "free",
+            credential: "free"
+          },
+          {
+            urls: "turn:turn.bistri.com:80",
+            username: "homeo",
+            credential: "homeo"
+          }
+        ]
+      } else if (retryCount === 1) {
+        // Second attempt: Use a more reliable TURN server
+        // Try a different set of free TURN servers
+        return [
+          ...baseServers,
+          {
+            urls: "turn:relay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:relay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:relay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          }
+        ]
+        
+        // For production, replace with Twilio TURN (recommended):
+        // Get credentials from: https://www.twilio.com/stun-turn
+        // return [
+        //   ...baseServers,
+        //   {
+        //     urls: "turn:global.turn.twilio.com:3478?transport=udp",
+        //     username: "YOUR_TWILIO_USERNAME",
+        //     credential: "YOUR_TWILIO_CREDENTIAL"
+        //   }
+        // ]
+      } else {
+        // Final attempt: STUN only (will likely fail but worth trying)
+        return baseServers
+      }
+    }
+
+    pc = new RTCPeerConnection({ 
+      iceServers: getIceServers(retryCount),
       iceCandidatePoolSize: 10,
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require',
-      iceTransportPolicy: retryCount > 0 ? 'relay' : 'all' // Force TURN on retry
+      iceTransportPolicy: retryCount > 0 ? 'relay' : 'all'
     })
     // Attach local tracks
     const local = localStreamRef.current
@@ -484,7 +497,8 @@ export function useWebRTC(roomId: string, userId: string) {
     const testPC = new RTCPeerConnection({
       iceServers: [
         { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:freeturn.tel:3478", username: "free", credential: "free" }
+        { urls: "turn:freeturn.tel:3478", username: "free", credential: "free" },
+        { urls: "turn:relay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }
       ]
     })
     
@@ -501,6 +515,10 @@ export function useWebRTC(roomId: string, userId: string) {
         console.log(`TURN test complete. Found ${relayCandidatesFound} relay candidates.`)
         if (relayCandidatesFound === 0) {
           console.warn("❌ No working TURN servers found!")
+          console.log("💡 To fix this, you need to:")
+          console.log("1. Get Twilio TURN credentials from: https://www.twilio.com/stun-turn")
+          console.log("2. Replace the TURN server configuration in the code")
+          console.log("3. Or set up your own TURN server using coturn")
         }
         testPC.close()
       }
@@ -516,6 +534,22 @@ export function useWebRTC(roomId: string, userId: string) {
     }
   }, [])
 
+  // Function to help set up Twilio TURN server
+  const setupTwilioTURN = useCallback(() => {
+    console.log("🔧 To set up Twilio TURN server:")
+    console.log("1. Go to: https://www.twilio.com/stun-turn")
+    console.log("2. Sign up for a free account")
+    console.log("3. Get your username and credential")
+    console.log("4. Replace the TURN server configuration in the code with:")
+    console.log(`
+    {
+      urls: "turn:global.turn.twilio.com:3478?transport=udp",
+      username: "YOUR_TWILIO_USERNAME",
+      credential: "YOUR_TWILIO_CREDENTIAL"
+    }
+    `)
+  }, [])
+
   return {
     isConnected,
     isMuted,
@@ -528,5 +562,6 @@ export function useWebRTC(roomId: string, userId: string) {
     toggleMute,
     debugConnections,
     testTURNServers,
+    setupTwilioTURN,
   }
 }
