@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useAuth } from "@/hooks/use-auth"
 import Link from "next/link"
-import { LogOut, User, Menu, Home, Calendar, Mic2 } from "lucide-react"
+import { LogOut, User, Menu, Home, Calendar, Mic2, Shield } from "lucide-react"
 import { useState } from "react"
 
 export function Navbar() {

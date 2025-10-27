@@ -1,0 +1,47 @@
+import { Pool } from 'pg'
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_rKob0cfTudn2@ep-summer-butterfly-a4n7vdij-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+  ssl: {
+    rejectUnauthorized: false
+  }
+})
+
+export default pool
+
+// Initialize database tables
+export async function initializeDatabase() {
+  try {
+    const client = await pool.connect()
+    
+    // Create users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+        status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_login TIMESTAMP
+      )
+    `)
+    
+    // Create admin user if it doesn't exist
+    const adminExists = await client.query('SELECT id FROM users WHERE username = $1', ['admin'])
+    if (adminExists.rows.length === 0) {
+      // Simple password hash for demo (in production, use bcrypt)
+      const adminPasswordHash = '12345' // This should be properly hashed
+      await client.query(
+        'INSERT INTO users (username, email, password_hash, role, status) VALUES ($1, $2, $3, $4, $5)',
+        ['admin', 'admin@sportsplatform.com', adminPasswordHash, 'admin', 'active']
+      )
+    }
+    
+    client.release()
+    console.log('Database initialized successfully')
+  } catch (error) {
+    console.error('Database initialization error:', error)
+  }
+}
