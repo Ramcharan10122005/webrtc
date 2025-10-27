@@ -267,6 +267,15 @@ export function useLiveKit(roomName: string, participantName: string) {
           await roomRef.current.localParticipant.setMicrophoneEnabled(!newMutedState)
           setIsMuted(newMutedState)
           console.log(`Microphone ${newMutedState ? 'muted' : 'unmuted'}`)
+          
+          // If recording, also update the recording track's enabled state
+          if (isRecording && localStreamRef.current) {
+            const micTracks = localStreamRef.current.getAudioTracks()
+            micTracks.forEach(track => {
+              track.enabled = !newMutedState
+              console.log(`Recording mic track ${track.label} ${newMutedState ? 'disabled' : 'enabled'}`)
+            })
+          }
         } else {
           console.warn('No audio track found to mute/unmute')
         }
@@ -274,7 +283,7 @@ export function useLiveKit(roomName: string, participantName: string) {
         console.error('Error toggling mute:', error)
       }
     }
-  }, [])
+  }, [isRecording])
 
   // Start recording
   const startRecording = useCallback(async () => {
