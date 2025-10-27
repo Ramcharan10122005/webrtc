@@ -53,6 +53,8 @@ export function useLiveKit(roomName: string, participantName: string) {
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const recordingMicRef = useRef<MediaStream | null>(null)
+  const recordingAudioContextRef = useRef<AudioContext | null>(null)
+  const recordingGainNodesRef = useRef<Map<string, GainNode>>(new Map())
 
   // Initialize audio analysis for voice detection
   const initializeAudioAnalysis = useCallback(async () => {
@@ -275,6 +277,23 @@ export function useLiveKit(roomName: string, participantName: string) {
               track.enabled = !newMutedState
               console.log(`Recording mic track ${track.label} ${newMutedState ? 'disabled' : 'enabled'}`)
             })
+            
+            // Also update the recording stream's audio tracks if they exist
+            if (mediaRecorderRef.current && mediaRecorderRef.current.stream) {
+              const recordingAudioTracks = mediaRecorderRef.current.stream.getAudioTracks()
+              recordingAudioTracks.forEach(track => {
+                if (track.label.includes('microphone') || track.label.includes('audio input')) {
+                  track.enabled = !newMutedState
+                  console.log(`Recording stream mic track ${track.label} ${newMutedState ? 'disabled' : 'enabled'}`)
+                }
+              })
+            }
+            
+            // Also control the gain nodes for microphone tracks in the recording
+            recordingGainNodesRef.current.forEach((gainNode, trackId) => {
+              gainNode.gain.value = newMutedState ? 0 : 1.0
+              console.log(`Recording gain node ${trackId} set to ${newMutedState ? 'muted (0)' : 'unmuted (1.0)'}`)
+            })
           }
         } else {
           console.warn('No audio track found to mute/unmute')
@@ -371,6 +390,7 @@ export function useLiveKit(roomName: string, participantName: string) {
 
       // Create an audio context to mix all audio tracks together
       const audioContext = new AudioContext({ sampleRate: 48000 })
+      recordingAudioContextRef.current = audioContext
       const destination = audioContext.createMediaStreamDestination()
       
       // Connect all audio tracks to the destination (mixer)
@@ -380,6 +400,13 @@ export function useLiveKit(roomName: string, participantName: string) {
         gainNode.gain.value = 1.0 // Full volume for each track
         source.connect(gainNode)
         gainNode.connect(destination)
+        
+        // Store gain node for mute control (especially for microphone tracks)
+        if (track.label.includes('microphone') || track.label.includes('audio input') || track === localStreamRef.current?.getAudioTracks()[0]) {
+          recordingGainNodesRef.current.set(track.id, gainNode)
+          console.log(`Stored gain node for mic track: ${track.label}`)
+        }
+        
         console.log(`Connected audio track ${index + 1} to mixer`)
       })
       
@@ -502,6 +529,13 @@ export function useLiveKit(roomName: string, participantName: string) {
         recordingMicRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop())
         recordingMicRef.current = null
       }
+
+      // Clean up recording audio context
+      if (recordingAudioContextRef.current) {
+        recordingAudioContextRef.current.close()
+        recordingAudioContextRef.current = null
+      }
+      recordingGainNodesRef.current.clear()
 
       mediaRecorderRef.current = null
       setIsRecording(false)
