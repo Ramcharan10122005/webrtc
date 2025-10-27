@@ -299,10 +299,9 @@ export function useLiveKit(roomName: string, participantName: string) {
       // Request screen/tab sharing with audio
       // Note: Browser security requires user to manually select the tab
       try {
-        // First try to get current window/tab
+        // Try to get screen/window/tab sharing
         screenStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            displaySurface: "browser", // Filters to show only browser tabs
             cursor: "always",
             width: { ideal: 1920 },
             height: { ideal: 1080 }
@@ -320,14 +319,14 @@ export function useLiveKit(roomName: string, participantName: string) {
         const screenVideoTracks = screenStreamRef.current.getVideoTracks()
         if (screenVideoTracks.length > 0) {
           videoTracks.push(...screenVideoTracks)
-          console.log("Added screen video track")
+          console.log("Added screen video track:", screenVideoTracks[0].label)
         }
 
         // Add screen audio track
         const screenAudioTracks = screenStreamRef.current.getAudioTracks()
         if (screenAudioTracks.length > 0) {
           audioTracks.push(...screenAudioTracks)
-          console.log("Added screen audio track")
+          console.log("Added screen audio track:", screenAudioTracks[0].label)
         }
       } catch (screenErr) {
         console.error("Failed to get screen/video stream:", screenErr)
