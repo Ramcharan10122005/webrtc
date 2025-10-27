@@ -28,7 +28,20 @@ interface VoiceRoomInterfaceProps {
 
 export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
   const { user } = useAuth()
-  const { isConnected, isMuted, audioLevel, users: livekitUsers, remoteStreams, toggleMute, joinRoom, leaveRoom } = useLiveKit(eventId, user?.name || user?.id || "user")
+  const { 
+    isConnected, 
+    isMuted, 
+    audioLevel, 
+    users: livekitUsers, 
+    remoteStreams, 
+    toggleMute, 
+    joinRoom, 
+    leaveRoom,
+    isRecording,
+    recordingDuration,
+    startRecording,
+    stopRecording 
+  } = useLiveKit(eventId, user?.name || user?.id || "user")
   const { scores, isLive } = useRealtimeScores(eventId)
 
   const [currentUser] = useState<User>({
@@ -64,23 +77,12 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
   }
 
   const [hasRequestedToSpeak, setHasRequestedToSpeak] = useState(false)
-  const [isRecording, setIsRecording] = useState(true)
-  const [recordingDuration, setRecordingDuration] = useState(2732) // seconds
 
   useEffect(() => {
     if (currentSpeaker.isSpeaking && audioLevel > 0) {
       // Audio level is now coming from WebRTC hook
     }
   }, [currentSpeaker.isSpeaking, audioLevel])
-
-  useEffect(() => {
-    if (isRecording) {
-      const interval = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1)
-      }, 1000)
-      return () => clearInterval(interval)
-    }
-  }, [isRecording])
 
   const handleRequestToSpeak = () => {
     setHasRequestedToSpeak(!hasRequestedToSpeak)
@@ -334,7 +336,13 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setIsRecording(!isRecording)}
+                onClick={() => {
+                  if (isRecording) {
+                    stopRecording()
+                  } else {
+                    startRecording()
+                  }
+                }}
                 className={`${
                   isRecording
                     ? "border-red-500/50 hover:bg-red-500/10 text-red-500"

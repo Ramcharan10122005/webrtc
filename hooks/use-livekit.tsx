@@ -3,6 +3,28 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Room, RoomEvent, RemoteParticipant, LocalParticipant, Track, AudioTrack } from "livekit-client"
 
+/**
+ * useLiveKit Hook
+ * 
+ * Provides LiveKit voice room functionality with video recording capabilities.
+ * 
+ * Recording Features:
+ * - Manual start/stop recording via user controls
+ * - Requires screen/tab sharing for video recording
+ * - Captures screen/tab video with system audio
+ * - Captures local microphone audio (voice input)
+ * - Captures all remote participant audio
+ * - Automatically downloads video recording as .webm or .mp4 file on stop
+ * - Shows recording duration in real-time
+ * 
+ * Usage:
+ * - Call startRecording() when user clicks record button (prompts for screen share)
+ * - Call stopRecording() when user clicks stop button
+ * - Recording state and duration are exposed via isRecording and recordingDuration
+ * 
+ * Important: User must select screen/tab to share when recording starts
+ */
+
 interface LiveKitUser {
   id: string
   name: string
@@ -18,12 +40,18 @@ export function useLiveKit(roomName: string, participantName: string) {
   const [users, setUsers] = useState<LiveKitUser[]>([])
   const [error, setError] = useState<string | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map())
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingDuration, setRecordingDuration] = useState(0)
 
   const roomRef = useRef<Room | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const animationFrameRef = useRef<number>()
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordingChunksRef = useRef<Blob[]>([])
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const screenStreamRef = useRef<MediaStream | null>(null)
 
   // Initialize audio analysis for voice detection
   const initializeAudioAnalysis = useCallback(async () => {
@@ -247,8 +275,206 @@ export function useLiveKit(roomName: string, participantName: string) {
     }
   }, [])
 
+  // Start recording
+  const startRecording = useCallback(async () => {
+    try {
+      if (!roomRef.current) {
+        throw new Error("Not connected to room")
+      }
+
+      // Collect all tracks (video + audio) for recording
+      const videoTracks: MediaStreamTrack[] = []
+      const audioTracks: MediaStreamTrack[] = []
+
+      // Request screen/tab sharing with audio
+      try {
+        screenStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: "browser", // Request tab audio
+            cursor: "always",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          } as MediaTrackConstraints,
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            suppressLocalAudioPlayback: false
+          } as MediaTrackConstraints
+        })
+
+        // Add screen video track
+        const screenVideoTracks = screenStreamRef.current.getVideoTracks()
+        if (screenVideoTracks.length > 0) {
+          videoTracks.push(...screenVideoTracks)
+          console.log("Added screen video track")
+        }
+
+        // Add screen audio track
+        const screenAudioTracks = screenStreamRef.current.getAudioTracks()
+        if (screenAudioTracks.length > 0) {
+          audioTracks.push(...screenAudioTracks)
+          console.log("Added screen audio track")
+        }
+      } catch (screenErr) {
+        console.error("Failed to get screen/video stream:", screenErr)
+        throw new Error("Screen sharing is required to record video. Please allow screen sharing when prompted.")
+      }
+
+      // Add local microphone track (voice input)
+      if (localStreamRef.current) {
+        const localAudioTrack = localStreamRef.current.getAudioTracks()[0]
+        if (localAudioTrack && !localAudioTrack.muted) {
+          audioTracks.push(localAudioTrack)
+          console.log("Added local microphone track")
+        }
+      }
+
+      // Add all remote participant audio tracks
+      remoteStreams.forEach((stream) => {
+        const remoteAudioTracks = stream.getAudioTracks()
+        audioTracks.push(...remoteAudioTracks)
+        console.log(`Added ${remoteAudioTracks.length} remote audio track(s)`)
+      })
+
+      if (videoTracks.length === 0) {
+        throw new Error("No video track available to record")
+      }
+
+      if (audioTracks.length === 0) {
+        throw new Error("No audio tracks available to record")
+      }
+
+      console.log(`Recording ${videoTracks.length} video track(s) and ${audioTracks.length} audio track(s)`)
+
+      // Create a new MediaStream with all video and audio tracks
+      const recordingStream = new MediaStream([...videoTracks, ...audioTracks])
+
+      // Create MediaRecorder with video MIME types
+      const mimeTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+        'video/mp4'
+      ]
+
+      let selectedMimeType = ''
+      for (const mimeType of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(mimeType)) {
+          selectedMimeType = mimeType
+          break
+        }
+      }
+
+      if (!selectedMimeType) {
+        throw new Error("No supported video recording format found")
+      }
+
+      const mediaRecorder = new MediaRecorder(recordingStream, {
+        mimeType: selectedMimeType
+      })
+
+      recordingChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = () => {
+        try {
+          // Create a blob from all chunks
+          const blob = new Blob(recordingChunksRef.current, { type: selectedMimeType })
+          
+          // Create download link
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+          const extension = selectedMimeType.includes('mp4') ? 'mp4' : 'webm'
+          a.download = `recording-${roomName}-${timestamp}.${extension}`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          URL.revokeObjectURL(url)
+
+          console.log("Video recording saved:", a.download)
+          setError(null)
+
+          // Stop screen share tracks
+          if (screenStreamRef.current) {
+            screenStreamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop())
+            screenStreamRef.current = null
+          }
+        } catch (err) {
+          console.error("Failed to save recording:", err)
+          setError("Failed to save recording")
+        } finally {
+          recordingChunksRef.current = []
+        }
+      }
+
+      mediaRecorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event)
+        setError("Recording error occurred")
+      }
+
+      mediaRecorderRef.current = mediaRecorder
+
+      // Start recording
+      mediaRecorder.start(1000) // Collect data every second
+      setIsRecording(true)
+      setRecordingDuration(0)
+
+      // Start timer
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1)
+      }, 1000)
+
+      console.log("Recording started with format:", selectedMimeType)
+    } catch (err) {
+      console.error("Failed to start recording:", err)
+      setError("Failed to start recording: " + (err as Error).message)
+    }
+  }, [roomName, remoteStreams])
+
+  // Stop recording
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      
+      // Stop recording stream tracks
+      if (mediaRecorderRef.current.stream) {
+        mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
+      }
+
+      // Stop screen share tracks if any
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop())
+        screenStreamRef.current = null
+      }
+
+      mediaRecorderRef.current = null
+      setIsRecording(false)
+
+      // Stop timer
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current)
+        recordingIntervalRef.current = null
+      }
+
+      console.log("Recording stopped")
+    }
+  }, [isRecording])
+
   // Leave room
   const leaveRoom = useCallback(async () => {
+    // Stop recording if active
+    if (isRecording) {
+      stopRecording()
+    }
+
     if (roomRef.current) {
       await roomRef.current.disconnect()
       roomRef.current = null
@@ -269,7 +495,7 @@ export function useLiveKit(roomName: string, participantName: string) {
     setRemoteStreams(new Map())
     setIsConnected(false)
     setAudioLevel(0)
-  }, [])
+  }, [isRecording, stopRecording])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -285,8 +511,12 @@ export function useLiveKit(roomName: string, participantName: string) {
     users,
     error,
     remoteStreams,
+    isRecording,
+    recordingDuration,
     joinRoom,
     leaveRoom,
     toggleMute,
+    startRecording,
+    stopRecording,
   }
 }
