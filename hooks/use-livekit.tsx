@@ -299,6 +299,7 @@ export function useLiveKit(roomName: string, participantName: string) {
       // Request screen/tab sharing with audio
       // Note: Browser security requires user to manually select the tab
       try {
+        // First try to get current window/tab
         screenStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
           video: {
             displaySurface: "browser", // Filters to show only browser tabs
@@ -330,7 +331,7 @@ export function useLiveKit(roomName: string, participantName: string) {
         }
       } catch (screenErr) {
         console.error("Failed to get screen/video stream:", screenErr)
-        throw new Error("Screen sharing is required to record video. Please allow screen sharing when prompted.")
+        throw new Error("Screen sharing is required to record video. Please select the current tab and enable 'Share tab audio' when prompted.")
       }
 
       // Add local microphone track (voice input)

@@ -97,6 +97,10 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
   const handleRecordClick = async () => {
     if (!isRecording) {
       try {
+        // Show detailed instructions before starting recording
+        const currentUrl = window.location.href
+        const currentTitle = document.title
+        alert(`Recording will start. When the tab selection appears:\n\n1. Look for: "${currentTitle}" or "${currentUrl}"\n2. Select "Share this tab" (usually at the top)\n3. Make sure "Share tab audio" is checked\n4. Click "Share"\n\nIf you don't see this tab, try refreshing the page first.`)
         await startRecording()
       } catch (err) {
         console.error("Recording failed:", err)
