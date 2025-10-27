@@ -325,26 +325,14 @@ export function useLiveKit(roomName: string, participantName: string) {
       }
 
       // Add local microphone track (voice input)
-      // Get a separate microphone stream for recording that is independent from room mute/unmute
-      try {
-        const recordingMicStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: false,
-            noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: 48000,
-          } as MediaTrackConstraints,
-        })
-        
-        const micAudioTracks = recordingMicStream.getAudioTracks()
+      // Use the existing room microphone so mute/unmute affects recording too
+      if (localStreamRef.current) {
+        const micAudioTracks = localStreamRef.current.getAudioTracks()
         if (micAudioTracks.length > 0) {
           audioTracks.push(...micAudioTracks)
-          recordingMicRef.current = recordingMicStream
-          console.log("Added separate recording microphone (independent from room mute)")
+          recordingMicRef.current = localStreamRef.current
+          console.log("Added room microphone for recording (respects mute/unmute)")
         }
-      } catch (micErr) {
-        console.error("Failed to get separate recording mic:", micErr)
-        // Continue without recording mic if it fails
       }
 
       // Add all remote participant audio tracks

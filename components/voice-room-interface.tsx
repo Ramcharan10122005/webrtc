@@ -88,8 +88,10 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
     setHasRequestedToSpeak(!hasRequestedToSpeak)
   }
 
-  const handleMuteToggle = () => {
-    toggleMute()
+  const handleMuteToggle = async () => {
+    console.log('Mute button clicked, current state:', isMuted)
+    await toggleMute()
+    console.log('Mute toggled, new state should be:', !isMuted)
   }
 
   const handleRecordClick = async () => {
