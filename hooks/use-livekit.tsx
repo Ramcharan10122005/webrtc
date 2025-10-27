@@ -271,7 +271,7 @@ export function useLiveKit(roomName: string, participantName: string) {
           // Use the local participant's setMicrophoneEnabled method
           await roomRef.current.localParticipant.setMicrophoneEnabled(!newMutedState)
           setIsMuted(newMutedState)
-          console.log(`Room microphone ${newMutedState ? 'muted' : 'unmuted'} (recording microphone is independent)`)
+          console.log(`Room microphone ${newMutedState ? 'muted' : 'unmuted'} (affects both room and recording)`)
         } else {
           console.warn('No audio track found to mute/unmute')
         }
@@ -279,7 +279,9 @@ export function useLiveKit(roomName: string, participantName: string) {
         console.error('Error toggling mute:', error)
       }
     } else {
-      console.warn('No room or local participant available for mute toggle')
+      console.warn('No room or local participant available for mute toggle - toggling UI state only')
+      // Fallback: just toggle the UI state when room is disconnected
+      setIsMuted(prev => !prev)
     }
   }, [])
 
@@ -332,26 +334,14 @@ export function useLiveKit(roomName: string, participantName: string) {
       }
 
       // Add local microphone track (voice input)
-      // Get a separate microphone stream for recording that is independent from room mute/unmute
-      try {
-        const recordingMicStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: false,
-            noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: 48000,
-          } as MediaTrackConstraints,
-        })
-        
-        const micAudioTracks = recordingMicStream.getAudioTracks()
+      // Use the existing room microphone to prevent room disconnection
+      if (localStreamRef.current) {
+        const micAudioTracks = localStreamRef.current.getAudioTracks()
         if (micAudioTracks.length > 0) {
           audioTracks.push(...micAudioTracks)
-          recordingMicRef.current = recordingMicStream
-          console.log("Added separate recording microphone (independent from room mute)")
+          recordingMicRef.current = localStreamRef.current
+          console.log("Added room microphone for recording (prevents room disconnection)")
         }
-      } catch (micErr) {
-        console.error("Failed to get separate recording mic:", micErr)
-        // Continue without recording mic if it fails
       }
 
       // Add all remote participant audio tracks
@@ -511,11 +501,9 @@ export function useLiveKit(roomName: string, participantName: string) {
         screenStreamRef.current = null
       }
 
-      // Stop recording microphone
-      if (recordingMicRef.current) {
-        recordingMicRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop())
-        recordingMicRef.current = null
-      }
+      // Don't stop the room microphone - it's shared with recording
+      // Just clear the reference
+      recordingMicRef.current = null
 
       // Clean up recording audio context
       if (recordingAudioContextRef.current) {
@@ -545,6 +533,7 @@ export function useLiveKit(roomName: string, participantName: string) {
     }
 
     if (roomRef.current) {
+      console.log('Disconnecting from room...')
       await roomRef.current.disconnect()
       roomRef.current = null
     }
