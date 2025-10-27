@@ -268,33 +268,7 @@ export function useLiveKit(roomName: string, participantName: string) {
           // Use the local participant's setMicrophoneEnabled method
           await roomRef.current.localParticipant.setMicrophoneEnabled(!newMutedState)
           setIsMuted(newMutedState)
-          console.log(`Microphone ${newMutedState ? 'muted' : 'unmuted'}`)
-          
-          // If recording, also update the recording track's enabled state
-          if (isRecording && localStreamRef.current) {
-            const micTracks = localStreamRef.current.getAudioTracks()
-            micTracks.forEach(track => {
-              track.enabled = !newMutedState
-              console.log(`Recording mic track ${track.label} ${newMutedState ? 'disabled' : 'enabled'}`)
-            })
-            
-            // Also update the recording stream's audio tracks if they exist
-            if (mediaRecorderRef.current && mediaRecorderRef.current.stream) {
-              const recordingAudioTracks = mediaRecorderRef.current.stream.getAudioTracks()
-              recordingAudioTracks.forEach(track => {
-                if (track.label.includes('microphone') || track.label.includes('audio input')) {
-                  track.enabled = !newMutedState
-                  console.log(`Recording stream mic track ${track.label} ${newMutedState ? 'disabled' : 'enabled'}`)
-                }
-              })
-            }
-            
-            // Also control the gain nodes for microphone tracks in the recording
-            recordingGainNodesRef.current.forEach((gainNode, trackId) => {
-              gainNode.gain.value = newMutedState ? 0 : 1.0
-              console.log(`Recording gain node ${trackId} set to ${newMutedState ? 'muted (0)' : 'unmuted (1.0)'}`)
-            })
-          }
+          console.log(`Room microphone ${newMutedState ? 'muted' : 'unmuted'} (recording microphone is independent)`)
         } else {
           console.warn('No audio track found to mute/unmute')
         }
@@ -302,7 +276,7 @@ export function useLiveKit(roomName: string, participantName: string) {
         console.error('Error toggling mute:', error)
       }
     }
-  }, [isRecording])
+  }, [])
 
   // Start recording
   const startRecording = useCallback(async () => {
@@ -353,14 +327,26 @@ export function useLiveKit(roomName: string, participantName: string) {
       }
 
       // Add local microphone track (voice input)
-      // Use the existing room microphone so mute/unmute affects recording too
-      if (localStreamRef.current) {
-        const micAudioTracks = localStreamRef.current.getAudioTracks()
+      // Get a separate microphone stream for recording that is independent from room mute/unmute
+      try {
+        const recordingMicStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+          } as MediaTrackConstraints,
+        })
+        
+        const micAudioTracks = recordingMicStream.getAudioTracks()
         if (micAudioTracks.length > 0) {
           audioTracks.push(...micAudioTracks)
-          recordingMicRef.current = localStreamRef.current
-          console.log("Added room microphone for recording (respects mute/unmute)")
+          recordingMicRef.current = recordingMicStream
+          console.log("Added separate recording microphone (independent from room mute)")
         }
+      } catch (micErr) {
+        console.error("Failed to get separate recording mic:", micErr)
+        // Continue without recording mic if it fails
       }
 
       // Add all remote participant audio tracks
@@ -401,11 +387,7 @@ export function useLiveKit(roomName: string, participantName: string) {
         source.connect(gainNode)
         gainNode.connect(destination)
         
-        // Store gain node for mute control (especially for microphone tracks)
-        if (track.label.includes('microphone') || track.label.includes('audio input') || track === localStreamRef.current?.getAudioTracks()[0]) {
-          recordingGainNodesRef.current.set(track.id, gainNode)
-          console.log(`Stored gain node for mic track: ${track.label}`)
-        }
+        // Note: Recording microphone is independent from room mute, so no need to store gain nodes for mute control
         
         console.log(`Connected audio track ${index + 1} to mixer`)
       })
