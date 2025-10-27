@@ -257,13 +257,16 @@ export function useLiveKit(roomName: string, participantName: string) {
 
   // Toggle mute
   const toggleMute = useCallback(async () => {
+    console.log('toggleMute called, roomRef:', !!roomRef.current, 'localParticipant:', !!roomRef.current?.localParticipant)
     if (roomRef.current?.localParticipant) {
       try {
         // Toggle microphone mute state
         const audioTrackPublications = roomRef.current.localParticipant.audioTrackPublications
+        console.log('Audio track publications:', audioTrackPublications.size)
         if (audioTrackPublications.size > 0) {
           const audioTrack = Array.from(audioTrackPublications.values())[0]
           const newMutedState = !audioTrack.isMuted
+          console.log('Current muted state:', audioTrack.isMuted, 'New state:', newMutedState)
           
           // Use the local participant's setMicrophoneEnabled method
           await roomRef.current.localParticipant.setMicrophoneEnabled(!newMutedState)
@@ -275,6 +278,8 @@ export function useLiveKit(roomName: string, participantName: string) {
       } catch (error) {
         console.error('Error toggling mute:', error)
       }
+    } else {
+      console.warn('No room or local participant available for mute toggle')
     }
   }, [])
 

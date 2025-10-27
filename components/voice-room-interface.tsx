@@ -90,17 +90,17 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
 
   const handleMuteToggle = async () => {
     console.log('Mute button clicked, current state:', isMuted)
-    await toggleMute()
-    console.log('Mute toggled, new state should be:', !isMuted)
+    try {
+      await toggleMute()
+      console.log('Mute toggled successfully, new state should be:', !isMuted)
+    } catch (error) {
+      console.error('Error toggling mute:', error)
+    }
   }
 
   const handleRecordClick = async () => {
     if (!isRecording) {
       try {
-        // Show detailed instructions before starting recording
-        const currentUrl = window.location.href
-        const currentTitle = document.title
-        alert(`Recording will start. When the selection dialog appears:\n\n1. Look for tabs with: "${currentTitle}"\n2. Or look for: "${currentUrl}"\n3. Select the tab you want to record\n4. Make sure "Share tab audio" is checked\n5. Click "Share"\n\nIf you don't see your tab, try:\n- Refreshing this page first\n- Switching to another tab and back\n- Looking for "Entire screen" option`)
         await startRecording()
       } catch (err) {
         console.error("Recording failed:", err)
