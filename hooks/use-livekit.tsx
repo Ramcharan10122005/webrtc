@@ -324,12 +324,25 @@ export function useLiveKit(roomName: string, participantName: string) {
       }
 
       // Add local microphone track (voice input)
-      if (localStreamRef.current) {
-        const localAudioTrack = localStreamRef.current.getAudioTracks()[0]
-        if (localAudioTrack && !localAudioTrack.muted) {
-          audioTracks.push(localAudioTrack)
-          console.log("Added local microphone track")
+      // Get a fresh microphone stream for recording
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false, // Disable for clearer recording
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000, // Higher quality for recording
+          } as MediaTrackConstraints,
+        })
+        
+        const micAudioTracks = micStream.getAudioTracks()
+        if (micAudioTracks.length > 0) {
+          audioTracks.push(...micAudioTracks)
+          console.log("Added local microphone track for recording")
         }
+      } catch (micErr) {
+        console.error("Failed to get microphone for recording:", micErr)
+        // Continue without microphone if it fails
       }
 
       // Add all remote participant audio tracks
@@ -343,14 +356,24 @@ export function useLiveKit(roomName: string, participantName: string) {
         throw new Error("No video track available to record")
       }
 
+      // Warn if no audio tracks, but don't fail - might still want to record video
       if (audioTracks.length === 0) {
-        throw new Error("No audio tracks available to record")
+        console.warn("No audio tracks available - recording video only")
+      } else {
+        console.log(`Total audio tracks to record: ${audioTracks.length}`)
       }
 
       console.log(`Recording ${videoTracks.length} video track(s) and ${audioTracks.length} audio track(s)`)
+      
+      // Log audio track details
+      audioTracks.forEach((track, index) => {
+        console.log(`  Audio track ${index + 1}: kind=${track.kind}, label=${track.label}, enabled=${track.enabled}, muted=${track.muted}`)
+      })
 
       // Create a new MediaStream with all video and audio tracks
       const recordingStream = new MediaStream([...videoTracks, ...audioTracks])
+      
+      console.log("Recording stream created with tracks:", recordingStream.getTracks().map(t => `${t.kind}:${t.label}`))
 
       // Create MediaRecorder with video MIME types
       const mimeTypes = [

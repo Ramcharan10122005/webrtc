@@ -95,11 +95,12 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
   const handleRecordClick = async () => {
     if (!isRecording) {
       // Show alert with instructions
-      alert("Please select THIS TAB (the current tab) from the browser's share menu to record video and audio. Make sure to check 'Share tab audio' checkbox if prompted.")
+      alert("RECORDING INSTRUCTIONS:\n\n1. Select THIS TAB when prompted\n2. Check 'Share tab audio' to capture audio\n3. Your microphone will also be recorded\n4. Click Stop when finished")
       try {
         await startRecording()
       } catch (err) {
         console.error("Recording failed:", err)
+        alert(`Recording failed: ${err}`)
       }
     } else {
       stopRecording()
