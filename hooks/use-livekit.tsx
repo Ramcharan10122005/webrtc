@@ -52,6 +52,7 @@ export function useLiveKit(roomName: string, participantName: string) {
   const recordingChunksRef = useRef<Blob[]>([])
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
+  const recordingMicRef = useRef<MediaStream | null>(null)
 
   // Initialize audio analysis for voice detection
   const initializeAudioAnalysis = useCallback(async () => {
@@ -61,7 +62,7 @@ export function useLiveKit(roomName: string, participantName: string) {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: 16000,
+          sampleRate: 48000, // Use 48kHz for better recording quality
           channelCount: 1,
         } as MediaTrackConstraints,
       })
@@ -69,7 +70,7 @@ export function useLiveKit(roomName: string, participantName: string) {
       localStreamRef.current = stream
 
       // Create audio context for voice activity detection
-      audioContextRef.current = new AudioContext({ sampleRate: 16000 })
+      audioContextRef.current = new AudioContext({ sampleRate: 48000 })
       const source = audioContextRef.current.createMediaStreamSource(stream)
       analyserRef.current = audioContextRef.current.createAnalyser()
       analyserRef.current.fftSize = 256
@@ -324,25 +325,26 @@ export function useLiveKit(roomName: string, participantName: string) {
       }
 
       // Add local microphone track (voice input)
-      // Get a fresh microphone stream for recording
+      // Get a separate microphone stream for recording that is independent from room mute/unmute
       try {
-        const micStream = await navigator.mediaDevices.getUserMedia({
+        const recordingMicStream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            echoCancellation: false, // Disable for clearer recording
+            echoCancellation: false,
             noiseSuppression: true,
             autoGainControl: true,
-            sampleRate: 48000, // Higher quality for recording
+            sampleRate: 48000,
           } as MediaTrackConstraints,
         })
         
-        const micAudioTracks = micStream.getAudioTracks()
+        const micAudioTracks = recordingMicStream.getAudioTracks()
         if (micAudioTracks.length > 0) {
           audioTracks.push(...micAudioTracks)
-          console.log("Added local microphone track for recording")
+          recordingMicRef.current = recordingMicStream
+          console.log("Added separate recording microphone (independent from room mute)")
         }
       } catch (micErr) {
-        console.error("Failed to get microphone for recording:", micErr)
-        // Continue without microphone if it fails
+        console.error("Failed to get separate recording mic:", micErr)
+        // Continue without recording mic if it fails
       }
 
       // Add all remote participant audio tracks
@@ -496,6 +498,12 @@ export function useLiveKit(roomName: string, participantName: string) {
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop())
         screenStreamRef.current = null
+      }
+
+      // Stop recording microphone
+      if (recordingMicRef.current) {
+        recordingMicRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop())
+        recordingMicRef.current = null
       }
 
       mediaRecorderRef.current = null
