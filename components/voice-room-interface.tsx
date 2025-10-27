@@ -92,6 +92,20 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
     toggleMute()
   }
 
+  const handleRecordClick = async () => {
+    if (!isRecording) {
+      // Show alert with instructions
+      alert("Please select THIS TAB (the current tab) from the browser's share menu to record video and audio. Make sure to check 'Share tab audio' checkbox if prompted.")
+      try {
+        await startRecording()
+      } catch (err) {
+        console.error("Recording failed:", err)
+      }
+    } else {
+      stopRecording()
+    }
+  }
+
   useEffect(() => {
     joinRoom()
     return () => {
@@ -336,13 +350,7 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  if (isRecording) {
-                    stopRecording()
-                  } else {
-                    startRecording()
-                  }
-                }}
+                onClick={handleRecordClick}
                 className={`${
                   isRecording
                     ? "border-red-500/50 hover:bg-red-500/10 text-red-500"

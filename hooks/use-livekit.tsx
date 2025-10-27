@@ -287,10 +287,11 @@ export function useLiveKit(roomName: string, participantName: string) {
       const audioTracks: MediaStreamTrack[] = []
 
       // Request screen/tab sharing with audio
+      // Note: Browser security requires user to manually select the tab
       try {
         screenStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            displaySurface: "browser", // Request tab audio
+            displaySurface: "browser", // Filters to show only browser tabs
             cursor: "always",
             width: { ideal: 1920 },
             height: { ideal: 1080 }
@@ -299,7 +300,8 @@ export function useLiveKit(roomName: string, participantName: string) {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
-            suppressLocalAudioPlayback: false
+            suppressLocalAudioPlayback: false,
+            systemAudio: "include" // Request system/tab audio
           } as MediaTrackConstraints
         })
 
