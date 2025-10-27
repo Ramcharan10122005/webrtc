@@ -370,34 +370,52 @@ export function useLiveKit(roomName: string, participantName: string) {
         console.log(`  Audio track ${index + 1}: kind=${track.kind}, label=${track.label}, enabled=${track.enabled}, muted=${track.muted}`)
       })
 
-      // Create a new MediaStream with all video and audio tracks
-      const recordingStream = new MediaStream([...videoTracks, ...audioTracks])
+      // Create an audio context to mix all audio tracks together
+      const audioContext = new AudioContext({ sampleRate: 48000 })
+      const destination = audioContext.createMediaStreamDestination()
+      
+      // Connect all audio tracks to the destination (mixer)
+      audioTracks.forEach((track, index) => {
+        const source = audioContext.createMediaStreamSource(new MediaStream([track]))
+        const gainNode = audioContext.createGain()
+        gainNode.gain.value = 1.0 // Full volume for each track
+        source.connect(gainNode)
+        gainNode.connect(destination)
+        console.log(`Connected audio track ${index + 1} to mixer`)
+      })
+      
+      // Combine video tracks with mixed audio
+      const recordingStream = new MediaStream([...videoTracks, ...destination.stream.getAudioTracks()])
       
       console.log("Recording stream created with tracks:", recordingStream.getTracks().map(t => `${t.kind}:${t.label}`))
+      console.log(`Final audio tracks in recording: ${recordingStream.getAudioTracks().length}`)
 
-      // Create MediaRecorder with video MIME types
-      const mimeTypes = [
-        'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp8,opus',
-        'video/webm',
-        'video/mp4'
-      ]
+             // Create MediaRecorder with video MIME types (prioritize MP4)
+       const mimeTypes = [
+         'video/mp4',
+         'video/webm;codecs=vp9,opus',
+         'video/webm;codecs=vp8,opus',
+         'video/webm'
+       ]
 
-      let selectedMimeType = ''
-      for (const mimeType of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(mimeType)) {
-          selectedMimeType = mimeType
-          break
-        }
-      }
+       let selectedMimeType = ''
+       for (const mimeType of mimeTypes) {
+         if (MediaRecorder.isTypeSupported(mimeType)) {
+           selectedMimeType = mimeType
+           console.log(`Using MIME type: ${mimeType}`)
+           break
+         }
+       }
 
-      if (!selectedMimeType) {
-        throw new Error("No supported video recording format found")
-      }
+       if (!selectedMimeType) {
+         throw new Error("No supported video recording format found")
+       }
 
-      const mediaRecorder = new MediaRecorder(recordingStream, {
-        mimeType: selectedMimeType
-      })
+       const mediaRecorder = new MediaRecorder(recordingStream, {
+         mimeType: selectedMimeType,
+         videoBitsPerSecond: 2500000, // 2.5 Mbps for good quality
+         audioBitsPerSecond: 128000   // 128 kbps for audio
+       })
 
       recordingChunksRef.current = []
 
