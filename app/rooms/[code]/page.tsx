@@ -4,8 +4,8 @@ import { useParams, useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { Navbar } from "@/components/navbar"
-import LiveKitAudioRoom from "@/components/LiveKitAudioRoom"
 import { Card, CardContent } from "@/components/ui/card"
+import { VoiceRoomInterface } from "@/components/voice-room-interface"
 
 export default function AdHocRoomPage() {
   const { code } = useParams<{ code: string }>()!
@@ -45,11 +45,7 @@ export default function AdHocRoomPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="max-w-6xl mx-auto p-4">
-        <div className="mb-4 text-sm text-muted-foreground">Room Code</div>
-        <div className="text-2xl font-bold tracking-widest mb-6">{code}</div>
-        <LiveKitAudioRoom roomName={code} participantName={user.name} />
-      </div>
+      <VoiceRoomInterface eventId={code} />
     </div>
   )
 }
