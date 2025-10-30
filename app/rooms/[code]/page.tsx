@@ -46,8 +46,26 @@ export default function AdHocRoomPage() {
     <div className="min-h-screen bg-background">
       <Navbar />
       <VoiceRoomInterface eventId={code} />
+      <style jsx global>{`
+        /* Replace default event title with room code on ad-hoc page */
+        /* Hide sport/status badges for ad-hoc rooms */
+        .min-h-screen.bg-background .max-w-4xl .mb-6 .p-4 .flex.items-center.justify-between > div > div:first-child { display: none; }
+      `}</style>
+      {typeof window !== 'undefined' && (
+        <ScriptSetter code={code} />
+      )}
     </div>
   )
+}
+
+function ScriptSetter({ code }: { code: string }) {
+  useEffect(() => {
+    const titleEl = document.querySelector('.min-h-screen.bg-background .max-w-4xl .mb-6 .p-4 h1') as HTMLElement | null
+    if (titleEl) {
+      titleEl.textContent = code
+    }
+  }, [code])
+  return null
 }
 
 
