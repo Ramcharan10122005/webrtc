@@ -12,20 +12,25 @@ export async function POST(request: NextRequest) {
 
     client = await pool.connect()
 
-    const result = await client.query(
-      `SELECT id, username, email, role, status
+    const userResult = await client.query(
+      `SELECT id, username, email, role, status, password_hash
        FROM users
-       WHERE username = $1 AND password_hash = $2
+       WHERE username = $1
        LIMIT 1`,
-      [username, password]
+      [username]
     )
 
-    if (result.rows.length === 0) {
+    if (userResult.rows.length === 0) {
       client.release()
-      return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 })
+      return NextResponse.json({ error: 'User does not exist' }, { status: 404 })
     }
 
-    const user = result.rows[0]
+    const user = userResult.rows[0]
+
+    if (user.password_hash !== password) {
+      client.release()
+      return NextResponse.json({ error: 'Invalid password' }, { status: 401 })
+    }
 
     if (user.role === 'admin') {
       client.release()

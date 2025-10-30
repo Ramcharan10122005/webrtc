@@ -9,11 +9,13 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function LoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
   const { login } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
@@ -22,15 +24,12 @@ export default function LoginPage() {
     e.preventDefault()
 
     if (!username || !password) {
-      toast({
-        title: "Error",
-        description: "Please enter both username and password",
-        variant: "destructive",
-      })
+      setErrorMessage("Please enter both username and password")
       return
     }
 
     setIsLoading(true)
+    setErrorMessage("")
 
     try {
       await login(username, password)
@@ -46,13 +45,9 @@ export default function LoginPage() {
       setTimeout(() => {
         router.push("/")
       }, 1500)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed:", error)
-      toast({
-        title: "Login Failed",
-        description: "Please check your credentials and try again",
-        variant: "destructive",
-      })
+      setErrorMessage(error?.message || "Login failed. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -71,6 +66,12 @@ export default function LoginPage() {
         </CardHeader>
 
         <CardContent>
+          {errorMessage && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTitle>Login Failed</AlertTitle>
+              <AlertDescription>{errorMessage}</AlertDescription>
+            </Alert>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
