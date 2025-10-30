@@ -15,6 +15,18 @@ export async function POST(request: NextRequest) {
 
     client = await pool.connect()
 
+    // Ensure rooms table exists (self-healing)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS rooms (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(8) UNIQUE NOT NULL,
+        event_id VARCHAR(100),
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     // generate unique code
     let code = generateRoomCode()
     for (let attempts = 0; attempts < 5; attempts++) {
