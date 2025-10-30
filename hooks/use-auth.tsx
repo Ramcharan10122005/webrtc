@@ -35,15 +35,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const login = async (username: string, password: string) => {
-    const mockUser: User = {
-      id: "1",
-      name: username,
-      email: `${username}@sportstalk.com`,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err?.error || 'Login failed')
     }
 
-    setUser(mockUser)
-    localStorage.setItem("sports-platform-user", JSON.stringify(mockUser))
+    const data = await response.json()
+    const loggedInUser: User = {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.email || data.name}`,
+    }
+
+    setUser(loggedInUser)
+    localStorage.setItem("sports-platform-user", JSON.stringify(loggedInUser))
   }
 
   const signup = async (name: string, email: string, password: string) => {
