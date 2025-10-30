@@ -19,10 +19,14 @@ export default pool
 
 // Initialize database tables
 export async function initializeDatabase() {
+  let client;
   try {
-    const client = await pool.connect()
+    console.log('Connecting to database pool...')
+    client = await pool.connect()
+    console.log('Database connection established')
     
     // Create users table
+    console.log('Creating users table...')
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -35,21 +39,30 @@ export async function initializeDatabase() {
         last_login TIMESTAMP
       )
     `)
+    console.log('Users table created or already exists')
     
     // Create admin user if it doesn't exist
+    console.log('Checking for admin user...')
     const adminExists = await client.query('SELECT id FROM users WHERE username = $1', ['admin'])
     if (adminExists.rows.length === 0) {
+      console.log('Admin user not found, creating...')
       // Simple password hash for demo (in production, use bcrypt)
       const adminPasswordHash = '12345' // This should be properly hashed
       await client.query(
         'INSERT INTO users (username, email, password_hash, role, status) VALUES ($1, $2, $3, $4, $5)',
         ['admin', 'admin@sportsplatform.com', adminPasswordHash, 'admin', 'active']
       )
+      console.log('Admin user created successfully')
+    } else {
+      console.log('Admin user already exists')
     }
     
     client.release()
     console.log('Database initialized successfully')
-  } catch (error) {
+    return { success: true, message: 'Database initialized' }
+  } catch (error: any) {
     console.error('Database initialization error:', error)
+    if (client) client.release()
+    throw error
   }
 }

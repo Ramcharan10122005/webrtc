@@ -3,10 +3,16 @@ import { initializeDatabase } from '@/lib/database'
 
 export async function GET() {
   try {
-    await initializeDatabase()
-    return NextResponse.json({ message: 'Database initialized successfully' })
-  } catch (error) {
+    console.log('Initializing database...')
+    const result = await initializeDatabase()
+    console.log('Database initialized successfully:', result)
+    return NextResponse.json({ message: 'Database initialized successfully', result })
+  } catch (error: any) {
     console.error('Database initialization error:', error)
-    return NextResponse.json({ error: 'Failed to initialize database' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Failed to initialize database',
+      details: error?.message,
+      code: error?.code
+    }, { status: 500 })
   }
 }
