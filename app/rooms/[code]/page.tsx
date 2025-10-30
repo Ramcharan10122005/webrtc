@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams, useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { Navbar } from "@/components/navbar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -11,12 +11,27 @@ export default function AdHocRoomPage() {
   const { code } = useParams<{ code: string }>()!
   const { user, isLoading } = useAuth()
   const router = useRouter()
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/login")
     }
   }, [user, isLoading, router])
+
+  useEffect(() => {
+    const loadRoom = async () => {
+      try {
+        const res = await fetch(`/api/rooms?code=${code}`)
+        const data = await res.json()
+        if (res.ok) {
+          const uid = Number.isFinite(Number(user?.id)) ? Number(user?.id) : null
+          setIsAdmin(!!uid && data?.created_by === uid)
+        }
+      } catch {}
+    }
+    if (user) loadRoom()
+  }, [code, user])
 
   if (isLoading) {
     return (
@@ -45,7 +60,7 @@ export default function AdHocRoomPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <VoiceRoomInterface eventId={code} />
+      <VoiceRoomInterface eventId={code} hearOnlyForAdmin isAdmin={isAdmin} />
       <style jsx global>{`
         /* Replace default event title with room code on ad-hoc page */
         /* Hide sport/status badges for ad-hoc rooms */

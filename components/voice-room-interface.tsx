@@ -24,9 +24,11 @@ interface User {
 
 interface VoiceRoomInterfaceProps {
   eventId: string
+  hearOnlyForAdmin?: boolean
+  isAdmin?: boolean
 }
 
-export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
+export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin = false }: VoiceRoomInterfaceProps) {
   const { user } = useAuth()
   const { 
     isConnected, 
@@ -163,7 +165,7 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
         </div>
 
         {/* Hidden audio tags for remote streams (autoplay requires user gesture, see Enable Audio button) */}
-        {[...remoteStreams.entries()].map(([peerId, stream]) => (
+        {(!hearOnlyForAdmin || isAdmin) && [...remoteStreams.entries()].map(([peerId, stream]) => (
           <audio
             key={peerId}
             ref={(el) => {
@@ -173,7 +175,6 @@ export function VoiceRoomInterface({ eventId }: VoiceRoomInterfaceProps) {
                 el.volume = 1
                 el.preload = "none"
                 el.controls = false
-                // Optimize for voice quality
                 if (el.setSinkId) {
                   el.setSinkId('default').catch(() => {})
                 }

@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 
     client = await pool.connect()
     const res = await client.query(
-      `SELECT id, code, event_id, is_active, created_at FROM rooms WHERE code = $1 LIMIT 1`,
+      `SELECT id, code, event_id, is_active, created_at, created_by FROM rooms WHERE code = $1 LIMIT 1`,
       [code]
     )
     client.release()
