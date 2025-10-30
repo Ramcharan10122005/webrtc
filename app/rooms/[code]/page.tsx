@@ -12,6 +12,7 @@ export default function AdHocRoomPage() {
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [adminName, setAdminName] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -27,6 +28,7 @@ export default function AdHocRoomPage() {
         if (res.ok) {
           const uid = Number.isFinite(Number(user?.id)) ? Number(user?.id) : null
           setIsAdmin(!!uid && data?.created_by === uid)
+          if (data?.created_by_username) setAdminName(data.created_by_username)
         }
       } catch {}
     }
@@ -60,7 +62,7 @@ export default function AdHocRoomPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <VoiceRoomInterface eventId={code} hearOnlyForAdmin isAdmin={isAdmin} />
+      <VoiceRoomInterface eventId={code} hearOnlyForAdmin isAdmin={isAdmin} adminName={adminName} />
       <style jsx global>{`
         /* Replace default event title with room code on ad-hoc page */
         /* Hide sport/status badges for ad-hoc rooms */

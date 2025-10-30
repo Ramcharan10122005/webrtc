@@ -104,7 +104,12 @@ export async function GET(request: NextRequest) {
 
     client = await pool.connect()
     const res = await client.query(
-      `SELECT id, code, event_id, is_active, created_at, created_by FROM rooms WHERE code = $1 LIMIT 1`,
+      `SELECT r.id, r.code, r.event_id, r.is_active, r.created_at, r.created_by,
+              u.username AS created_by_username
+       FROM rooms r
+       LEFT JOIN users u ON u.id = r.created_by
+       WHERE r.code = $1
+       LIMIT 1`,
       [code]
     )
     client.release()

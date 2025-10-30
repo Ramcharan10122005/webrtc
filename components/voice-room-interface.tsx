@@ -26,9 +26,10 @@ interface VoiceRoomInterfaceProps {
   eventId: string
   hearOnlyForAdmin?: boolean
   isAdmin?: boolean
+  adminName?: string
 }
 
-export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin = false }: VoiceRoomInterfaceProps) {
+export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin = false, adminName }: VoiceRoomInterfaceProps) {
   const { user } = useAuth()
   const { 
     isConnected, 
@@ -165,7 +166,15 @@ export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin 
         </div>
 
         {/* Hidden audio tags for remote streams (autoplay requires user gesture, see Enable Audio button) */}
-        {(!hearOnlyForAdmin || isAdmin) && [...remoteStreams.entries()].map(([peerId, stream]) => (
+        {[...remoteStreams.entries()]
+          .filter(([peerId]) => {
+            if (!hearOnlyForAdmin) return true
+            if (isAdmin) return true
+            if (!adminName) return false
+            const u = livekitUsers.find(u => u.id === peerId)
+            return u?.name === adminName
+          })
+          .map(([peerId, stream]) => (
           <audio
             key={peerId}
             ref={(el) => {
