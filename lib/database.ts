@@ -1,11 +1,19 @@
 import { Pool } from 'pg'
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_rKob0cfTudn2@ep-summer-butterfly-a4n7vdij-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
-  ssl: {
+// Connection configuration
+const connectionConfig = {
+  connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_rKob0cfTudn2@ep-summer-butterfly-a4n7vdij-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require',
+  ssl: process.env.DATABASE_URL ? {
     rejectUnauthorized: false
-  }
-})
+  } : false,
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+}
+
+console.log('Database connection string:', connectionConfig.connectionString ? 'Set' : 'Not set')
+
+const pool = new Pool(connectionConfig)
 
 export default pool
 

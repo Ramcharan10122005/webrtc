@@ -13,14 +13,19 @@ export async function GET() {
     client.release()
     
     return NextResponse.json(result.rows)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching users:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Failed to fetch users',
+      details: error?.message || 'Unknown error',
+      stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+    }, { status: 500 })
   }
 }
 
 // Create a new user
 export async function POST(request: NextRequest) {
+  let client;
   try {
     const { username, email, password, role } = await request.json()
     
@@ -28,7 +33,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
     
-    const client = await pool.connect()
+    console.log('Attempting to connect to database...')
+    client = await pool.connect()
+    console.log('Database connection successful')
     
     // Check if username or email already exists
     const existingUser = await client.query(
@@ -50,8 +57,15 @@ export async function POST(request: NextRequest) {
     client.release()
     
     return NextResponse.json(result.rows[0], { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating user:', error)
-    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
+    if (client) {
+      client.release()
+    }
+    return NextResponse.json({ 
+      error: 'Failed to create user',
+      details: error?.message || 'Unknown error',
+      stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+    }, { status: 500 })
   }
 }
