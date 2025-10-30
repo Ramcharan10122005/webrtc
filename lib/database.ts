@@ -2,7 +2,7 @@ import { Pool } from 'pg'
 
 // Connection configuration
 const connectionConfig = {
-  connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_rKob0cfTudn2@ep-summer-butterfly-a4n7vdij-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require',
+  connectionString: process.env.DATABASE_URL ,
   ssl: process.env.DATABASE_URL ? {
     rejectUnauthorized: false
   } : false,
