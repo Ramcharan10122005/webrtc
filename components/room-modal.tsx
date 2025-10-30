@@ -52,9 +52,13 @@ export default function RoomModal({ open, onOpenChange, eventId }: RoomModalProp
         setError('Please enter a valid 8-character code')
         return
       }
-      const res = await fetch(`/api/rooms?code=${code}`)
+      const res = await fetch(`/api/rooms/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, userId: user ? Number(user.id) : null }),
+      })
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Room not found')
+      if (!res.ok) throw new Error(data?.error || 'Failed to join room')
       onOpenChange(false)
       router.push(`/voice-room/${code}`)
     } catch (e: any) {

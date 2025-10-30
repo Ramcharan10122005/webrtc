@@ -42,8 +42,20 @@ export async function POST(request: NextRequest) {
       [code, userId || null, eventId || null]
     )
 
+    const room = result.rows[0]
+
+    // Add creator as admin member if provided
+    if (userId) {
+      await client.query(
+        `INSERT INTO room_members (room_id, user_id, role)
+         VALUES ($1, $2, 'admin')
+         ON CONFLICT (room_id, user_id) DO NOTHING`,
+        [room.id, userId]
+      )
+    }
+
     client.release()
-    return NextResponse.json(result.rows[0], { status: 201 })
+    return NextResponse.json(room, { status: 201 })
   } catch (error: any) {
     if (client) client.release()
     return NextResponse.json({ error: 'Failed to create room', details: error?.message }, { status: 500 })
