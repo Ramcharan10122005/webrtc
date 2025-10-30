@@ -16,7 +16,19 @@ export async function POST(request: NextRequest) {
 
     client = await pool.connect()
 
-    // Ensure rooms table exists (self-healing)
+    // Ensure prerequisite tables exist (self-healing)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+        status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_login TIMESTAMP
+      )
+    `)
     await client.query(`
       CREATE TABLE IF NOT EXISTS rooms (
         id SERIAL PRIMARY KEY,
@@ -68,12 +80,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('POST /api/rooms error:', { message: error?.message, code: error?.code, detail: error?.detail, stack: error?.stack })
     if (client) client.release()
-    const body: any = { error: 'Failed to create room' }
-    if (process.env.NODE_ENV !== 'production') {
-      body.details = error?.message
-      body.code = error?.code
-      body.detail = error?.detail
-    }
+    const body: any = { error: 'Failed to create room', details: error?.message, code: error?.code, detail: error?.detail }
     return NextResponse.json(body, { status: 500 })
   }
 }

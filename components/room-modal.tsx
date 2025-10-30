@@ -35,7 +35,7 @@ export default function RoomModal({ open, onOpenChange, eventId }: RoomModalProp
         body: JSON.stringify({ userId: numericUserId, eventId }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to create room')
+      if (!res.ok) throw new Error(`${data?.error || 'Failed to create room'}${data?.details ? `: ${data.details}` : ''}`)
       setCreatedCode(data.code)
     } catch (e: any) {
       setError(e?.message || 'Failed to create room')
@@ -60,7 +60,7 @@ export default function RoomModal({ open, onOpenChange, eventId }: RoomModalProp
         body: JSON.stringify({ code, userId: numericUserId }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to join room')
+      if (!res.ok) throw new Error(`${data?.error || 'Failed to join room'}${data?.details ? `: ${data.details}` : ''}`)
       onOpenChange(false)
       router.push(`/voice-room/${code}`)
     } catch (e: any) {
