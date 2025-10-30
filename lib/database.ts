@@ -41,6 +41,20 @@ export async function initializeDatabase() {
     `)
     console.log('Users table created or already exists')
     
+    // Create rooms table
+    console.log('Creating rooms table...')
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS rooms (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(8) UNIQUE NOT NULL,
+        event_id VARCHAR(100),
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    console.log('Rooms table created or already exists')
+
     // Create admin user if it doesn't exist
     console.log('Checking for admin user...')
     const adminExists = await client.query('SELECT id FROM users WHERE username = $1', ['admin'])

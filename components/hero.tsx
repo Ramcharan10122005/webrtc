@@ -1,9 +1,12 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Play, Users, Mic } from "lucide-react"
+import RoomModal from "@/components/room-modal"
 
 export function Hero() {
+  const [open, setOpen] = useState(false)
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-background via-background to-card py-12 sm:py-16 lg:py-20 px-3 sm:px-4 lg:px-6">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(139,92,246,0.1),transparent_70%)]" />
@@ -38,11 +41,14 @@ export function Hero() {
             size="lg"
             variant="outline"
             className="w-full sm:w-auto border-accent/20 hover:bg-accent/10 group bg-transparent px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base"
+            onClick={() => setOpen(true)}
           >
             <Mic className="w-4 h-4 sm:w-5 sm:h-5 mr-2 group-hover:scale-110 transition-transform" />
             Join Voice Room
           </Button>
         </div>
+
+        <RoomModal open={open} onOpenChange={setOpen} />
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 lg:gap-8 text-xs sm:text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
