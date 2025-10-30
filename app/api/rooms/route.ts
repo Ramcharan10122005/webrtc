@@ -39,6 +39,16 @@ export async function POST(request: NextRequest) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS room_members (
+        id SERIAL PRIMARY KEY,
+        room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        role VARCHAR(20) DEFAULT 'participant' CHECK (role IN ('admin', 'participant')),
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(room_id, user_id)
+      )
+    `)
 
     // generate unique code
     let code = generateRoomCode()
