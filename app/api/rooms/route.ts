@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   let client
   try {
     const { userId, eventId } = await request.json()
-    const createdBy = Number.isFinite(Number(userId)) ? Number(userId) : null
+    let createdBy = Number.isFinite(Number(userId)) ? Number(userId) : null
 
     client = await pool.connect()
 
@@ -34,6 +34,14 @@ export async function POST(request: NextRequest) {
       const exists = await client.query('SELECT id FROM rooms WHERE code = $1', [code])
       if (exists.rows.length === 0) break
       code = generateRoomCode()
+    }
+
+    // validate creator exists to satisfy FK
+    if (createdBy) {
+      const exists = await client.query('SELECT id FROM users WHERE id = $1 LIMIT 1', [createdBy])
+      if (exists.rows.length === 0) {
+        createdBy = null
+      }
     }
 
     const result = await client.query(

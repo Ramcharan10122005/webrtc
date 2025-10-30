@@ -47,12 +47,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (numericUserId) {
-      await client.query(
+      // ensure user exists to satisfy FK
+      const exists = await client.query('SELECT id FROM users WHERE id = $1 LIMIT 1', [numericUserId])
+      if (exists.rows.length > 0) {
+        await client.query(
       `INSERT INTO room_members (room_id, user_id, role)
        VALUES ($1, $2, 'participant')
        ON CONFLICT (room_id, user_id) DO NOTHING`,
       [room.id, numericUserId]
     )
+      }
     }
 
     client.release()

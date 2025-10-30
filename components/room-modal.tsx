@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -81,6 +81,7 @@ export default function RoomModal({ open, onOpenChange, eventId }: RoomModalProp
       <DialogContent className="sm:max-w-md bg-card/90 backdrop-blur border-border/50">
         <DialogHeader>
           <DialogTitle className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Voice Room</DialogTitle>
+          <DialogDescription>Start a room with a code or join an existing one</DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="create" className="w-full">
           <TabsList className="grid grid-cols-2 w-full">
