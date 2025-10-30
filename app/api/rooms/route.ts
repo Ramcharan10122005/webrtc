@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   let client
   try {
     const { userId, eventId } = await request.json()
+    const createdBy = Number.isFinite(Number(userId)) ? Number(userId) : null
 
     client = await pool.connect()
 
@@ -39,26 +40,33 @@ export async function POST(request: NextRequest) {
       `INSERT INTO rooms (code, created_by, event_id, is_active)
        VALUES ($1, $2, $3, TRUE)
        RETURNING id, code, event_id, created_at` ,
-      [code, userId || null, eventId || null]
+      [code, createdBy, eventId || null]
     )
 
     const room = result.rows[0]
 
     // Add creator as admin member if provided
-    if (userId) {
+    if (createdBy) {
       await client.query(
         `INSERT INTO room_members (room_id, user_id, role)
          VALUES ($1, $2, 'admin')
          ON CONFLICT (room_id, user_id) DO NOTHING`,
-        [room.id, userId]
+        [room.id, createdBy]
       )
     }
 
     client.release()
     return NextResponse.json(room, { status: 201 })
   } catch (error: any) {
+    console.error('POST /api/rooms error:', { message: error?.message, code: error?.code, detail: error?.detail, stack: error?.stack })
     if (client) client.release()
-    return NextResponse.json({ error: 'Failed to create room', details: error?.message }, { status: 500 })
+    const body: any = { error: 'Failed to create room' }
+    if (process.env.NODE_ENV !== 'production') {
+      body.details = error?.message
+      body.code = error?.code
+      body.detail = error?.detail
+    }
+    return NextResponse.json(body, { status: 500 })
   }
 }
 

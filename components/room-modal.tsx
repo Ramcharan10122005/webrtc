@@ -28,10 +28,11 @@ export default function RoomModal({ open, onOpenChange, eventId }: RoomModalProp
     try {
       setError("")
       setCreating(true)
+      const numericUserId = Number.isFinite(Number(user?.id)) ? Number(user?.id) : null
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user ? Number(user.id) : null, eventId }),
+        body: JSON.stringify({ userId: numericUserId, eventId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Failed to create room')
@@ -52,10 +53,11 @@ export default function RoomModal({ open, onOpenChange, eventId }: RoomModalProp
         setError('Please enter a valid 8-character code')
         return
       }
+      const numericUserId = Number.isFinite(Number(user?.id)) ? Number(user?.id) : null
       const res = await fetch(`/api/rooms/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, userId: user ? Number(user.id) : null }),
+        body: JSON.stringify({ code, userId: numericUserId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Failed to join room')

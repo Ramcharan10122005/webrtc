@@ -5,7 +5,8 @@ export async function POST(request: NextRequest) {
   let client
   try {
     const { code, userId } = await request.json()
-    if (!code || !userId) return NextResponse.json({ error: 'Missing code or userId' }, { status: 400 })
+    const numericUserId = Number.isFinite(Number(userId)) ? Number(userId) : null
+    if (!code) return NextResponse.json({ error: 'Missing code' }, { status: 400 })
 
     client = await pool.connect()
 
@@ -45,18 +46,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Room is inactive' }, { status: 410 })
     }
 
-    await client.query(
+    if (numericUserId) {
+      await client.query(
       `INSERT INTO room_members (room_id, user_id, role)
        VALUES ($1, $2, 'participant')
        ON CONFLICT (room_id, user_id) DO NOTHING`,
-      [room.id, userId]
+      [room.id, numericUserId]
     )
+    }
 
     client.release()
     return NextResponse.json({ success: true, room })
   } catch (error: any) {
+    console.error('POST /api/rooms/join error:', { message: error?.message, code: error?.code, detail: error?.detail, stack: error?.stack })
     if (client) client.release()
-    return NextResponse.json({ error: 'Failed to join room', details: error?.message }, { status: 500 })
+    const body: any = { error: 'Failed to join room' }
+    if (process.env.NODE_ENV !== 'production') {
+      body.details = error?.message
+      body.code = error?.code
+      body.detail = error?.detail
+    }
+    return NextResponse.json(body, { status: 500 })
   }
 }
 
