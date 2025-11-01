@@ -107,28 +107,68 @@ export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin 
     }
   }, [eventId, user?.id, isMuted, toggleMute])
 
-  // Convert LiveKit users to our User interface, merge with room members data
-  const listeners: User[] = livekitUsers.map(livekitUser => {
-    // Try to find matching member by ID or username
-    const member = roomMembers.find(
-      m => String(m.id) === livekitUser.id || m.username === livekitUser.name
-    )
+  // Get current user ID for filtering
+  const currentUserId = Number.isFinite(Number(user?.id)) ? Number(user?.id) : null
+  
+  // Build listeners list from database members (excluding current user), merged with LiveKit data
+  const listeners: User[] = roomMembers
+    .filter(member => {
+      // Exclude current user
+      if (currentUserId && member.id === currentUserId) return false
+      return true
+    })
+    .map(member => {
+      // Find matching LiveKit participant by ID or username
+      const livekitParticipant = livekitUsers.find(
+        lu => String(member.id) === lu.id || member.username === lu.name || member.username === lu.id
+      )
+      
+      // Merge database member data with LiveKit real-time data
+      return {
+        id: String(member.id), // Use DB user ID as primary identifier
+        name: member.username,
+        avatar: "",
+        isSpeaking: livekitParticipant?.isSpeaking || false,
+        isMuted: member.muted || livekitParticipant?.isMuted || false, // DB mute takes precedence, then LiveKit
+        isAdmin: member.role === 'admin',
+        requestedToSpeak: false,
+        userId: member.id, // Store DB user ID for muting
+      }
+    })
+  
+  // Also include LiveKit users that might not be in database yet (fallback)
+  if (roomMembers.length === 0) {
+    const additionalListeners = livekitUsers
+      .filter(lu => {
+        // Exclude current user
+        if (currentUserId && (String(currentUserId) === lu.id || user?.name === lu.name)) return false
+        return true
+      })
+      .map(livekitUser => {
+        const member = roomMembers.find(
+          m => String(m.id) === livekitUser.id || m.username === livekitUser.name
+        )
+        
+        return {
+          id: livekitUser.id,
+          name: livekitUser.name,
+          avatar: "",
+          isSpeaking: livekitUser.isSpeaking,
+          isMuted: member?.muted ?? livekitUser.isMuted,
+          isAdmin: member?.role === 'admin' || false,
+          requestedToSpeak: false,
+          userId: member?.id,
+        }
+      })
     
-    return {
-      id: livekitUser.id,
-      name: livekitUser.name,
-      avatar: "",
-      isSpeaking: livekitUser.isSpeaking,
-      isMuted: member?.muted ?? livekitUser.isMuted, // Use DB mute status if available
-      isAdmin: member?.role === 'admin' || false,
-      requestedToSpeak: false,
-      userId: member?.id, // Store DB user ID for muting
-    }
-  }).filter(user => {
-    // Only show users that are in room_members (if we have members loaded)
-    if (roomMembers.length === 0) return true
-    return roomMembers.some(m => String(m.id) === user.id || m.username === user.name)
-  })
+    // Merge and deduplicate
+    const existingIds = new Set(listeners.map(l => l.id))
+    additionalListeners.forEach(al => {
+      if (!existingIds.has(al.id)) {
+        listeners.push(al)
+      }
+    })
+  }
 
   // Find the current speaker (first speaking user or first user if none speaking)
   const currentSpeaker: User = listeners.find(user => user.isSpeaking) || listeners[0] || {
