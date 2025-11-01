@@ -20,7 +20,6 @@ interface User {
   isMuted: boolean
   isAdmin: boolean
   requestedToSpeak: boolean
-  userId?: number // Database user ID
 }
 
 interface VoiceRoomInterfaceProps {
@@ -44,18 +43,9 @@ export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin 
     isRecording,
     recordingDuration,
     startRecording,
-    stopRecording,
-    muteRemoteParticipant 
-  } = useLiveKit(eventId, user?.name || user?.id || "user", isAdmin)
+    stopRecording 
+  } = useLiveKit(eventId, user?.name || user?.id || "user")
   const { scores, isLive } = useRealtimeScores(eventId)
-  
-  const [roomMembers, setRoomMembers] = useState<Array<{
-    id: number
-    username: string
-    role: string
-    muted: boolean
-  }>>([])
-  const [loadingMembers, setLoadingMembers] = useState(false)
 
   const [currentUser] = useState<User>({
     id: user?.id || "current-user",
@@ -67,68 +57,16 @@ export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin 
     requestedToSpeak: false,
   })
 
-  // Fetch room members and apply mute status
-  useEffect(() => {
-    const fetchMembers = async () => {
-      try {
-        setLoadingMembers(true)
-        const res = await fetch(`/api/rooms/${eventId}/members`)
-        if (res.ok) {
-          const data = await res.json()
-          setRoomMembers(data.members || [])
-          
-          // Apply mute status if current user is muted in DB
-          if (user?.id) {
-            const currentUserId = Number.isFinite(Number(user.id)) ? Number(user.id) : null
-            if (currentUserId) {
-              const myMember = data.members?.find((m: any) => m.id === currentUserId)
-              if (myMember?.muted && !isMuted) {
-                // User is muted in DB but not in LiveKit - apply mute
-                toggleMute()
-              } else if (!myMember?.muted && isMuted) {
-                // User is not muted in DB but is muted in LiveKit - allow unmute
-                // (Don't force unmute, let user control it, but they can unmute if admin unmuted them)
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch room members:', error)
-      } finally {
-        setLoadingMembers(false)
-      }
-    }
-    
-    if (eventId) {
-      fetchMembers()
-      // Refresh members periodically
-      const interval = setInterval(fetchMembers, 5000)
-      return () => clearInterval(interval)
-    }
-  }, [eventId, user?.id, isMuted, toggleMute])
-
-  // Convert LiveKit users to our User interface, merge with room members data
-  const listeners: User[] = livekitUsers.map(livekitUser => {
-    // Try to find matching member by ID or username
-    const member = roomMembers.find(
-      m => String(m.id) === livekitUser.id || m.username === livekitUser.name
-    )
-    
-    return {
-      id: livekitUser.id,
-      name: livekitUser.name,
-      avatar: "",
-      isSpeaking: livekitUser.isSpeaking,
-      isMuted: member?.muted ?? livekitUser.isMuted, // Use DB mute status if available
-      isAdmin: member?.role === 'admin' || false,
-      requestedToSpeak: false,
-      userId: member?.id, // Store DB user ID for muting
-    }
-  }).filter(user => {
-    // Only show users that are in room_members (if we have members loaded)
-    if (roomMembers.length === 0) return true
-    return roomMembers.some(m => String(m.id) === user.id || m.username === user.name)
-  })
+  // Convert LiveKit users to our User interface
+  const listeners: User[] = livekitUsers.map(livekitUser => ({
+    id: livekitUser.id,
+    name: livekitUser.name,
+    avatar: "",
+    isSpeaking: livekitUser.isSpeaking,
+    isMuted: livekitUser.isMuted,
+    isAdmin: false, // You can implement admin logic later
+    requestedToSpeak: false, // You can implement hand raising later
+  }))
 
   // Find the current speaker (first speaking user or first user if none speaking)
   const currentSpeaker: User = listeners.find(user => user.isSpeaking) || listeners[0] || {
@@ -349,82 +287,32 @@ export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin 
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {listeners.map((listenerUser) => {
-                const numericUserId = Number.isFinite(Number(listenerUser?.userId || listenerUser?.id)) 
-                  ? Number(listenerUser?.userId || listenerUser?.id) 
-                  : null
-                const currentUserId = Number.isFinite(Number(user?.id)) ? Number(user?.id) : null
-                
-                return (
-                  <div key={listenerUser.id} className="text-center">
-                    <div className="relative inline-block mb-2">
-                      <Avatar className="w-16 h-16 border-2 border-border">
-                        <AvatarImage src={listenerUser.avatar || "/placeholder.svg"} />
-                        <AvatarFallback className="text-sm">
-                          {listenerUser.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      {listenerUser.isAdmin && (
-                        <div className="absolute -top-1 -left-1 bg-accent rounded-full p-1">
-                          <Crown className="w-3 h-3 text-accent-foreground" />
-                        </div>
-                      )}
-                      {listenerUser.requestedToSpeak && (
-                        <div className="absolute -top-1 -right-1 bg-accent rounded-full p-1">
-                          <Hand className="w-3 h-3 text-accent-foreground" />
-                        </div>
-                      )}
-                      {listenerUser.isMuted && (
-                        <div className="absolute -bottom-1 -right-1 bg-destructive rounded-full p-1">
-                          <MicOff className="w-3 h-3 text-destructive-foreground" />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs font-medium truncate mb-1">{listenerUser.name}</p>
-                    {isAdmin && numericUserId && currentUserId && String(numericUserId) !== String(currentUserId) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        onClick={async () => {
-                          try {
-                            await muteRemoteParticipant(
-                              eventId,
-                              numericUserId,
-                              currentUserId,
-                              !listenerUser.isMuted
-                            )
-                            // Refresh members
-                            const res = await fetch(`/api/rooms/${eventId}/members`)
-                            if (res.ok) {
-                              const data = await res.json()
-                              setRoomMembers(data.members || [])
-                            }
-                          } catch (error) {
-                            console.error('Failed to mute/unmute user:', error)
-                            alert('Failed to mute/unmute user')
-                          }
-                        }}
-                      >
-                        {listenerUser.isMuted ? (
-                          <>
-                            <Mic className="w-3 h-3 mr-1" />
-                            Unmute
-                          </>
-                        ) : (
-                          <>
-                            <MicOff className="w-3 h-3 mr-1" />
-                            Mute
-                          </>
-                        )}
-                      </Button>
+              {listeners.map((user) => (
+                <div key={user.id} className="text-center">
+                  <div className="relative inline-block mb-2">
+                    <Avatar className="w-16 h-16 border-2 border-border">
+                      <AvatarImage src={user.avatar || "/placeholder.svg"} />
+                      <AvatarFallback className="text-sm">
+                        {user.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
+                      </AvatarFallback>
+                    </Avatar>
+                    {user.requestedToSpeak && (
+                      <div className="absolute -top-1 -right-1 bg-accent rounded-full p-1">
+                        <Hand className="w-3 h-3 text-accent-foreground" />
+                      </div>
+                    )}
+                    {user.isMuted && (
+                      <div className="absolute -bottom-1 -right-1 bg-destructive rounded-full p-1">
+                        <MicOff className="w-3 h-3 text-destructive-foreground" />
+                      </div>
                     )}
                   </div>
-                )
-              })}
+                  <p className="text-xs font-medium truncate">{user.name}</p>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { roomName, participantName, isAdmin } = req.body
+    const { roomName, participantName } = req.body
 
     if (!roomName || !participantName) {
       return res.status(400).json({ error: 'Room name and participant name are required' })
@@ -25,17 +25,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       name: participantName,
     })
 
-    const grant = {
+    token.addGrant({
       room: roomName,
       roomJoin: true,
       canPublish: true,
       canSubscribe: true,
-      canUpdateOwnMetadata: true,
-      canUpdateMetadata: !!isAdmin, // Admins can update other participants' metadata
-      canPublishData: !!isAdmin, // Admins can publish data (for signaling)
-    }
-
-    token.addGrant(grant)
+    })
 
     const jwt = await token.toJwt()
 
