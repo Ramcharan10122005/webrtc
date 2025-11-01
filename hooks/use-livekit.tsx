@@ -33,7 +33,7 @@ interface LiveKitUser {
   isMuted: boolean
 }
 
-export function useLiveKit(roomName: string, participantName: string) {
+export function useLiveKit(roomName: string, participantName: string, isAdmin: boolean = false) {
   const [isConnected, setIsConnected] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
@@ -192,6 +192,19 @@ export function useLiveKit(roomName: string, participantName: string) {
         }
       })
 
+      // Listen for data messages (mute commands from admin)
+      room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any, kind: any, topic: string | undefined) => {
+        if (topic === 'mute-command' && payload.length > 0) {
+          const shouldMute = payload[0] === 1
+          console.log(`Received mute command: ${shouldMute ? 'mute' : 'unmute'}`)
+          // Apply mute locally
+          if (room.localParticipant) {
+            room.localParticipant.setMicrophoneEnabled(!shouldMute)
+            setIsMuted(shouldMute)
+          }
+        }
+      })
+
       // Connect to LiveKit room
       const token = await getLiveKitToken(roomName, participantName)
       await room.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://webrtc-fllhyq2h.livekit.cloud", token)
@@ -206,7 +219,7 @@ export function useLiveKit(roomName: string, participantName: string) {
       console.error("Failed to join LiveKit room:", err)
       setError("Failed to connect to room")
     }
-  }, [roomName, participantName, initializeAudioAnalysis])
+    }, [roomName, participantName, isAdmin, initializeAudioAnalysis])
 
   // Get LiveKit token (you'll need to implement this on your backend)
   const getLiveKitToken = async (roomName: string, participantName: string): Promise<string> => {
@@ -220,6 +233,7 @@ export function useLiveKit(roomName: string, participantName: string) {
       body: JSON.stringify({
         roomName,
         participantName,
+        isAdmin,
       }),
     })
 
@@ -525,6 +539,59 @@ export function useLiveKit(roomName: string, participantName: string) {
     }
   }, [isRecording])
 
+  // Mute remote participant (admin only)
+  const muteRemoteParticipant = useCallback(async (roomCode: string, targetUserId: number, adminUserId: number, muted: boolean) => {
+    try {
+      // Update database
+      const response = await fetch(`/api/rooms/${roomCode}/members/${targetUserId}/mute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          adminUserId,
+          muted,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to mute participant')
+      }
+
+      // Send LiveKit data message to notify participant
+      if (roomRef.current && isAdmin) {
+        // Try to find participant by identity (could be user ID string or username)
+        const remoteParticipant = Array.from(roomRef.current.remoteParticipants.values())
+          .find(p => {
+            // Check if identity matches user ID (as string or number)
+            return p.identity === String(targetUserId) || 
+                   p.identity === targetUserId.toString() ||
+                   p.name === String(targetUserId)
+          })
+        
+        if (remoteParticipant) {
+          // Use data channel to send mute command
+          // Note: LiveKit doesn't support direct remote muting, so we notify via data
+          const data = new Uint8Array([muted ? 1 : 0])
+          roomRef.current.localParticipant.publishData(data, {
+            topic: 'mute-command',
+            destinationIdentities: [remoteParticipant.identity],
+          })
+        } else {
+          // Broadcast to all participants if we can't find the specific one
+          // They'll check their DB status anyway
+          console.log(`Could not find participant ${targetUserId} to send mute command, but DB updated`)
+        }
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to mute remote participant:', error)
+      throw error
+    }
+  }, [isAdmin])
+
   // Leave room
   const leaveRoom = useCallback(async () => {
     // Stop recording if active
@@ -576,5 +643,7 @@ export function useLiveKit(roomName: string, participantName: string) {
     toggleMute,
     startRecording,
     stopRecording,
+    muteRemoteParticipant,
+    room: roomRef.current,
   }
 }

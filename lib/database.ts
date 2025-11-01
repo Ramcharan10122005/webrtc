@@ -63,9 +63,20 @@ export async function initializeDatabase() {
         room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
         user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
         role VARCHAR(20) DEFAULT 'participant' CHECK (role IN ('admin', 'participant')),
+        muted BOOLEAN DEFAULT FALSE,
         joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(room_id, user_id)
       )
+    `)
+    // Add muted column if it doesn't exist (for existing databases)
+    await client.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'room_members' AND column_name = 'muted') THEN
+          ALTER TABLE room_members ADD COLUMN muted BOOLEAN DEFAULT FALSE;
+        END IF;
+      END $$;
     `)
     console.log('room_members table created or already exists')
 
