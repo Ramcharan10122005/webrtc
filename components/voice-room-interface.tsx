@@ -270,30 +270,81 @@ export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin 
         {/* Hidden audio tags for remote streams (autoplay requires user gesture, see Enable Audio button) */}
         {[...remoteStreams.entries()]
           .filter(([peerId]) => {
+            // If hearOnlyForAdmin is false, allow all participants
             if (!hearOnlyForAdmin) return true
+            
+            // If current user is admin, allow all participants
             if (isAdmin) return true
-            if (!adminName) return false
-            const u = livekitUsers.find(u => u.id === peerId)
-            return u?.name === adminName
+            
+            // Otherwise, only allow admin's audio
+            if (!adminName && !currentUserId) return false
+            
+            // Find admin member from database
+            const adminMember = roomMembers.find(m => m.role === 'admin' || m.username === adminName)
+            if (!adminMember) return false
+            
+            // Check if this peerId matches the admin (by ID or name)
+            const peerMatchesAdmin = 
+              String(adminMember.id) === peerId || 
+              adminMember.username === peerId ||
+              adminMember.username === livekitUsers.find(u => u.id === peerId)?.name
+            
+            // Also check LiveKit participant name
+            const livekitParticipant = livekitUsers.find(u => u.id === peerId)
+            const nameMatches = livekitParticipant?.name === adminName || livekitParticipant?.name === adminMember.username
+            
+            return peerMatchesAdmin || nameMatches
           })
           .map(([peerId, stream]) => (
           <audio
             key={peerId}
             ref={(el) => {
-              if (el && el.srcObject !== stream) {
-                el.srcObject = stream
+              if (el) {
+                // Ensure stream is set
+                if (el.srcObject !== stream) {
+                  el.srcObject = stream
+                }
+                
+                // Configure audio element
                 el.muted = false
                 el.volume = 1
-                el.preload = "none"
+                el.preload = "auto"
                 el.controls = false
+                
+                // Set audio output device
                 if (el.setSinkId) {
                   el.setSinkId('default').catch(() => {})
+                }
+                
+                // Ensure audio tracks are enabled
+                stream.getAudioTracks().forEach(track => {
+                  track.enabled = true
+                  console.log(`Audio track enabled for ${peerId}:`, track.label, track.readyState)
+                })
+                
+                // Try to play (browser autoplay policy may block this)
+                const playPromise = el.play()
+                if (playPromise !== undefined) {
+                  playPromise
+                    .then(() => {
+                      console.log(`Audio playing for participant ${peerId}`)
+                    })
+                    .catch(error => {
+                      console.warn(`Autoplay prevented for ${peerId}:`, error)
+                      // Audio will play when user interacts or clicks "Enable Audio"
+                    })
                 }
               }
             }}
             autoPlay
             playsInline
             style={{ display: "none" }}
+            onLoadedMetadata={() => {
+              console.log(`Audio metadata loaded for participant ${peerId}`)
+            }}
+            onError={(e) => {
+              console.error(`Audio error for participant ${peerId}:`, e)
+            }}
           />
         ))}
 
@@ -506,8 +557,28 @@ export function VoiceRoomInterface({ eventId, hearOnlyForAdmin = false, isAdmin 
                 variant="outline"
                 size="sm"
                 className="border-accent/20 hover:bg-accent/10 bg-transparent text-xs"
-                onClick={() => {
-                  document.querySelectorAll('audio').forEach((a) => a instanceof HTMLAudioElement && a.play().catch(() => {}))
+                onClick={async () => {
+                  // Enable all audio elements
+                  const audioElements = document.querySelectorAll('audio')
+                  const playPromises = Array.from(audioElements).map(async (a) => {
+                    if (a instanceof HTMLAudioElement) {
+                      try {
+                        // Ensure tracks are enabled
+                        if (a.srcObject instanceof MediaStream) {
+                          a.srcObject.getAudioTracks().forEach(track => {
+                            track.enabled = true
+                            console.log('Enabled audio track:', track.label)
+                          })
+                        }
+                        await a.play()
+                        console.log('Audio element playing:', a)
+                      } catch (error) {
+                        console.warn('Failed to play audio element:', error)
+                      }
+                    }
+                  })
+                  await Promise.all(playPromises)
+                  console.log('All audio elements enabled')
                 }}
               >
                 <Volume2 className="w-4 h-4 mr-1" />

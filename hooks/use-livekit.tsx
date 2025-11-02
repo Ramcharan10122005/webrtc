@@ -137,6 +137,26 @@ export function useLiveKit(roomName: string, participantName: string, isAdmin: b
 
       room.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
         console.log(`Participant connected: ${participant.identity}`)
+        
+        // Subscribe to all audio tracks from the new participant
+        participant.audioTrackPublications.forEach((publication) => {
+          if (publication.trackSid && !publication.isSubscribed) {
+            publication.setSubscribed(true)
+            console.log(`Subscribing to new participant ${participant.identity} audio track`)
+          }
+        })
+        
+        // Listen for new tracks from this participant
+        participant.on('trackSubscribed', (track: Track, publication: any) => {
+          if (track.kind === Track.Kind.Audio) {
+            const audioTrack = track as AudioTrack
+            if (audioTrack.mediaStreamTrack) {
+              audioTrack.mediaStreamTrack.enabled = true
+              console.log(`New audio track enabled from ${participant.identity}`)
+            }
+          }
+        })
+        
         updateUsers()
       })
 
@@ -155,11 +175,29 @@ export function useLiveKit(roomName: string, participantName: string, isAdmin: b
         
         if (track.kind === Track.Kind.Audio) {
           const audioTrack = track as AudioTrack
+          
+          // Ensure the track is enabled
+          if (audioTrack.mediaStreamTrack) {
+            audioTrack.mediaStreamTrack.enabled = true
+            console.log(`Audio track enabled for ${participant.identity}:`, {
+              enabled: audioTrack.mediaStreamTrack.enabled,
+              readyState: audioTrack.mediaStreamTrack.readyState,
+              label: audioTrack.mediaStreamTrack.label,
+            })
+          }
+          
           const stream = new MediaStream([audioTrack.mediaStreamTrack])
+          
+          // Ensure all tracks in the stream are enabled
+          stream.getAudioTracks().forEach(track => {
+            track.enabled = true
+            console.log(`Stream audio track enabled: ${track.label}`)
+          })
           
           setRemoteStreams((prev) => {
             const next = new Map(prev)
             next.set(participant.identity, stream)
+            console.log(`Added remote stream for ${participant.identity}, total streams: ${next.size}`)
             return next
           })
         }
@@ -214,6 +252,24 @@ export function useLiveKit(roomName: string, participantName: string, isAdmin: b
         await room.localParticipant.setMicrophoneEnabled(true)
         console.log("Microphone enabled")
       }
+
+      // Ensure we subscribe to all existing remote participants' audio tracks
+      room.remoteParticipants.forEach((participant) => {
+        participant.audioTrackPublications.forEach((publication) => {
+          if (publication.isSubscribed && publication.track) {
+            // Track is already subscribed, ensure it's enabled
+            const track = publication.track as AudioTrack
+            if (track.mediaStreamTrack) {
+              track.mediaStreamTrack.enabled = true
+              console.log(`Enabled existing audio track from ${participant.identity}`)
+            }
+          } else if (!publication.isSubscribed && publication.trackSid) {
+            // Subscribe to the track (if it exists but not subscribed)
+            publication.setSubscribed(true)
+            console.log(`Subscribing to audio track from ${participant.identity}`)
+          }
+        })
+      })
 
     } catch (err) {
       console.error("Failed to join LiveKit room:", err)
